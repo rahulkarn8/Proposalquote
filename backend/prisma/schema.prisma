@@ -1,0 +1,81 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum QuoteStatus {
+  DRAFT
+  FINAL
+  EXPIRED
+}
+
+enum BillingPeriod {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  ONE_TIME
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String?
+  passwordHash String?
+  cognitoSub   String?  @unique
+  role         UserRole @default(USER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  quotes       Quote[]
+}
+
+model Quote {
+  id          String          @id @default(uuid())
+  quoteNumber String          @unique
+  userId      String?
+  user        User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  status      QuoteStatus     @default(DRAFT)
+  totalPrice  Float
+  currency    String          @default("USD")
+  validUntil  DateTime
+  lineItems   QuoteLineItem[]
+  configuration Configuration?
+}
+
+model QuoteLineItem {
+  id            String        @id @default(uuid())
+  quoteId       String
+  quote         Quote         @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  category      String
+  description   String
+  quantity      Float
+  unitPrice     Float
+  total         Float
+  recurring     Boolean       @default(false)
+  billingPeriod BillingPeriod @default(ONE_TIME)
+}
+
+model Configuration {
+  id        String   @id @default(uuid())
+  quoteId   String   @unique
+  quote     Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  data      String
+  createdAt DateTime @default(now())
+}
+
+model AppSettings {
+  id        String   @id @default("default")
+  data      String
+  updatedAt DateTime @updatedAt
+}

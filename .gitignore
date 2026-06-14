@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.db
+*.db-journal
+pdfs/
+**/.env
+.env
+.env.*
+!.env.docker.example
+.DS_Store

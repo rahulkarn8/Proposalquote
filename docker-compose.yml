@@ -1,0 +1,39 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-quote-generator:latest
+    container_name: ai-quote-generator
+    ports:
+      - "8080:80"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: file:/data/app.db
+      PDF_STORAGE_PATH: /data/pdfs
+      AUTH_MODE: ${AUTH_MODE:-local}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      LOCAL_ADMIN_EMAIL: ${LOCAL_ADMIN_EMAIL:-admin@motherson.com}
+      LOCAL_ADMIN_PASSWORD: ${LOCAL_ADMIN_PASSWORD:-Admin123!}
+      LOCAL_USER_EMAIL: ${LOCAL_USER_EMAIL:-user@motherson.com}
+      LOCAL_USER_PASSWORD: ${LOCAL_USER_PASSWORD:-User123!}
+      COGNITO_REGION: ${COGNITO_REGION:-}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID:-}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID:-}
+      COGNITO_ADMIN_GROUP: ${COGNITO_ADMIN_GROUP:-admin}
+      COGNITO_USER_GROUP: ${COGNITO_USER_GROUP:-user}
+      SEED_ON_START: ${SEED_ON_START:-false}
+    volumes:
+      - app-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  app-data:
