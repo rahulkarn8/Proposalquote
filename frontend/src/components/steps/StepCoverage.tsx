@@ -8,7 +8,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import type { ComplianceRequirement, IntegrationComplexity, ProblemTypeFactors, SolutionFeature } from '@/types';
+import { FeatureCategoryCollapsible } from '@/components/FeatureCategoryCollapsible';
+import { EngineeringEffortTable } from '@/components/EngineeringEffortTable';
+import type {
+  ComplianceRequirement,
+  EngineeringEffortCatalogItem,
+  IntegrationComplexity,
+  ProblemTypeFactors,
+  SolutionFeature,
+} from '@/types';
 import { SOLUTION_COVERAGE_OPTIONS } from '@/types';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
@@ -20,6 +28,7 @@ import {
   getCoverageItemMultiplier,
   syncFeatureWiseEffort,
 } from '@/lib/setupPricing';
+import { sumEngineeringBreakdown } from '@/lib/engineeringEfforts';
 
 interface StepCoverageProps {
   form: UseFormReturn<QuoteFormValues>;
@@ -28,6 +37,8 @@ interface StepCoverageProps {
   solutionFeatures: SolutionFeature[];
   featureCategories: string[];
   recommendedFeatures: SolutionFeature[];
+  engineeringEfforts: EngineeringEffortCatalogItem[];
+  engineeringCategories: string[];
 }
 
 function buildFallbackFeatures(): SolutionFeature[] {
@@ -46,6 +57,8 @@ export function StepCoverage({
   solutionFeatures,
   featureCategories,
   recommendedFeatures,
+  engineeringEfforts,
+  engineeringCategories,
 }: StepCoverageProps) {
   const [customCoverage, setCustomCoverage] = useState('');
   const coverage = form.watch('solutionCoverage') || [];
@@ -54,6 +67,7 @@ export function StepCoverage({
   const complexity = form.watch('complexity');
   const problemType = form.watch('problemType');
   const currency = form.watch('currency');
+  const engineeringEffortBreakdown = form.watch('engineeringEffortBreakdown') || [];
   const factors = getProblemTypeFactors(problemTypes, problemType);
 
   const catalog = solutionFeatures.length > 0 ? solutionFeatures : buildFallbackFeatures();
@@ -69,7 +83,16 @@ export function StepCoverage({
     return grouped;
   }, [catalog, categories]);
 
-  const recommendedLabels = new Set(recommendedFeatures.map((f) => f.label));
+  const recommendedLabels = useMemo(
+    () => new Set(recommendedFeatures.map((f) => f.label)),
+    [recommendedFeatures],
+  );
+
+  const recommendedCategories = useMemo(() => {
+    const cats = new Set<string>();
+    for (const feature of recommendedFeatures) cats.add(feature.category);
+    return cats;
+  }, [recommendedFeatures]);
 
   const syncEffortIfFeatureMode = (nextCoverage: string[]) => {
     if (setupPricingMode !== 'FEATURE_WISE' || !factors || !pricingRates) return;
@@ -127,6 +150,7 @@ export function StepCoverage({
 
   const catalogLabels = new Set(catalog.map((f) => f.label));
   const customOnly = coverage.filter((c) => !catalogLabels.has(c));
+  const allocatedHours = sumEngineeringBreakdown(engineeringEffortBreakdown);
 
   const renderFeature = (feature: SolutionFeature) => {
     const selected = coverage.includes(feature.label);
@@ -140,18 +164,18 @@ export function StepCoverage({
     return (
       <label
         key={feature.label}
-        className="flex items-start gap-2 cursor-pointer p-2 rounded-md border border-transparent hover:border-[var(--color-border)]"
+        className="flex items-start gap-2 cursor-pointer p-2 rounded-md hover:bg-[var(--color-muted)]/40"
       >
         <Checkbox
           className="mt-0.5"
           checked={selected}
           onCheckedChange={() => toggleCoverage(feature.label)}
         />
-        <span className="text-sm flex-1">
+        <span className="text-sm flex-1 min-w-0">
           <span className="flex items-center gap-2 flex-wrap">
             <span>{feature.label}</span>
             {recommendedLabels.has(feature.label) && (
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Recommended</Badge>
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0">Recommended</Badge>
             )}
           </span>
           {feature.description && (
@@ -170,99 +194,136 @@ export function StepCoverage({
     );
   };
 
+  const selectedCountForCategory = (category: string) => {
+    const labels = new Set((featuresByCategory.get(category) ?? []).map((f) => f.label));
+    return coverage.filter((c) => labels.has(c)).length;
+  };
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold mb-1">Coverage & Requirements</h2>
         <p className="text-sm text-[var(--color-muted-foreground)]">
           {setupPricingMode === 'FEATURE_WISE'
-            ? 'Select AI solution features — each contributes to the setup fee using admin feature weights'
-            : 'Select solution components and compliance requirements'}
+            ? 'Expand a category to select AI solution features for your quote'
+            : 'Allocate engineering hours across predefined effort areas for your quote'}
         </p>
       </div>
 
-      {recommendedFeatures.length > 0 && (
-        <Card className="border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Recommended for this problem type</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {recommendedFeatures.map(renderFeature)}
-          </CardContent>
-        </Card>
-      )}
+      {setupPricingMode === 'FEATURE_WISE' ? (
+        <>
+          <div className="space-y-2">
+            <Label>Solution Features</Label>
+            <p className="text-xs text-[var(--color-muted-foreground)] mb-2">
+              {coverage.length} selected · {categories.length} categories
+            </p>
+            <div className="space-y-2">
+              {categories.map((category) => {
+                const features = featuresByCategory.get(category) ?? [];
+                if (features.length === 0) return null;
+                const selectedCount = selectedCountForCategory(category);
+                const isRecommended = recommendedCategories.has(category);
 
-      <div className="space-y-5">
-        {categories.map((category) => {
-          const features = featuresByCategory.get(category) ?? [];
-          if (features.length === 0) return null;
-          const nonRecommended = features.filter((f) => !recommendedLabels.has(f.label));
-          if (nonRecommended.length === 0 && recommendedFeatures.length > 0) return null;
-
-          return (
-            <div key={category} className="space-y-2">
-              <Label className="text-base">{category}</Label>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {(recommendedFeatures.length > 0 ? nonRecommended : features).map(renderFeature)}
-              </div>
+                return (
+                  <FeatureCategoryCollapsible
+                    key={category}
+                    title={category}
+                    featureCount={features.length}
+                    selectedCount={selectedCount}
+                    defaultOpen={isRecommended || category === 'Core Platform'}
+                    highlighted={isRecommended}
+                  >
+                    {features.map(renderFeature)}
+                  </FeatureCategoryCollapsible>
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
-
-      {customOnly.length > 0 && (
-        <div className="space-y-2">
-          <Label>Custom features</Label>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {customOnly.map((custom) => {
-              const featureCost = featureCostParams
-                ? estimateFeatureCost(custom, featureCostParams)
-                : null;
-              return (
-                <label key={custom} className="flex items-start gap-2 cursor-pointer p-2 rounded-md border border-[var(--color-border)]">
-                  <Checkbox className="mt-0.5" checked onCheckedChange={() => toggleCoverage(custom)} />
-                  <span className="text-sm italic flex-1">
-                    {custom}
-                    {setupPricingMode === 'FEATURE_WISE' && featureCost != null && (
-                      <span className="block text-xs text-[var(--color-primary)] font-medium not-italic">
-                        {formatCurrency(featureCost, currency)}
-                      </span>
-                    )}
-                  </span>
-                </label>
-              );
-            })}
           </div>
-        </div>
-      )}
 
-      <div className="flex gap-2">
-        <Input
-          placeholder="Add custom coverage option"
-          value={customCoverage}
-          onChange={(e) => setCustomCoverage(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomCoverage())}
-        />
-        <Button type="button" variant="outline" onClick={addCustomCoverage}>Add</Button>
-      </div>
-      {form.formState.errors.solutionCoverage && (
-        <p className="text-xs text-[var(--color-destructive)]">{form.formState.errors.solutionCoverage.message}</p>
-      )}
+          {customOnly.length > 0 && (
+            <FeatureCategoryCollapsible
+              title="Custom / Other"
+              featureCount={customOnly.length}
+              selectedCount={customOnly.length}
+              defaultOpen
+            >
+              {customOnly.map((custom) => {
+                const featureCost = featureCostParams
+                  ? estimateFeatureCost(custom, featureCostParams)
+                  : null;
+                return (
+                  <label key={custom} className="flex items-start gap-2 cursor-pointer p-2 rounded-md hover:bg-[var(--color-muted)]/40">
+                    <Checkbox className="mt-0.5" checked onCheckedChange={() => toggleCoverage(custom)} />
+                    <span className="text-sm italic flex-1">
+                      {custom}
+                      {featureCost != null && (
+                        <span className="block text-xs text-[var(--color-primary)] font-medium not-italic">
+                          {formatCurrency(featureCost, currency)}
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                );
+              })}
+            </FeatureCategoryCollapsible>
+          )}
 
-      {setupPricingMode === 'FEATURE_WISE' && estimatedSetup != null && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Feature-wise Setup Estimate</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm space-y-1">
-            <p className="font-medium text-[var(--color-primary)]">
-              {formatCurrency(estimatedSetup, currency)} setup (before integration & compliance)
-            </p>
-            <p className="text-[var(--color-muted-foreground)]">
-              Based on {coverage.length} selected feature{coverage.length === 1 ? '' : 's'} and {factors?.engineeringEffortRange.typical ?? '—'}h problem-type baseline
-            </p>
-          </CardContent>
-        </Card>
+          <div className="flex gap-2">
+            <Input
+              placeholder="Add custom coverage option"
+              value={customCoverage}
+              onChange={(e) => setCustomCoverage(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomCoverage())}
+            />
+            <Button type="button" variant="outline" onClick={addCustomCoverage}>Add</Button>
+          </div>
+          {form.formState.errors.solutionCoverage && (
+            <p className="text-xs text-[var(--color-destructive)]">{form.formState.errors.solutionCoverage.message}</p>
+          )}
+
+          {estimatedSetup != null && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Feature-wise Setup Estimate</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm space-y-1">
+                <p className="font-medium text-[var(--color-primary)]">
+                  {formatCurrency(estimatedSetup, currency)} setup (before integration & compliance)
+                </p>
+                <p className="text-[var(--color-muted-foreground)]">
+                  Based on {coverage.length} selected feature{coverage.length === 1 ? '' : 's'} and {factors?.engineeringEffortRange.typical ?? '—'}h problem-type baseline
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="space-y-2">
+            <Label>Engineering Effort Breakdown</Label>
+            <EngineeringEffortTable
+              form={form}
+              efforts={engineeringEfforts}
+              categories={engineeringCategories}
+            />
+          </div>
+
+          {estimatedSetup != null && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Engineering Setup Estimate</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm space-y-1">
+                <p className="font-medium text-[var(--color-primary)]">
+                  {formatCurrency(estimatedSetup, currency)} setup (before integration & compliance)
+                </p>
+                <p className="text-[var(--color-muted-foreground)]">
+                  Based on {allocatedHours}h allocated across {engineeringEffortBreakdown.filter((line) => line.hours > 0).length} effort areas
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
 
       <div className="space-y-3">

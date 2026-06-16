@@ -98,7 +98,7 @@ export function StepVolume({ form, problemTypes, pricingRates }: StepVolumeProps
           </Select>
           <p className="text-xs text-[var(--color-muted-foreground)]">
             {setupPricingMode === 'ENGINEERING_EFFORT'
-              ? 'Enter engineering hours below. Selected features define scope only.'
+              ? 'Enter total engineering hours below. Allocate hours by effort area on the Coverage step.'
               : 'Setup fee is built from selected solution features on the Coverage step (admin feature weights).'}
           </p>
         </div>

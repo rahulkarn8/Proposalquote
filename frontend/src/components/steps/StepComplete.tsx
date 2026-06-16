@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SelectedPaymentDisplay } from '@/components/PaymentOptionsDisplay';
 import { CheckCircle2, Circle } from 'lucide-react';
+import { isOneTimePayment } from '@/lib/paymentModel';
 
 interface StepCompleteProps {
   quoteNumber: string;
@@ -62,13 +63,20 @@ export function StepComplete({
 
           {pricing && (
             <>
+              <SelectedPaymentDisplay option={pricing.paymentOption} currency={currency} compact />
               <div className="flex justify-between items-center border-t pt-3">
-                <span className="text-sm text-[var(--color-muted-foreground)]">Total Contract Value</span>
+                <span className="text-sm text-[var(--color-muted-foreground)]">
+                  {pricing.paymentModel === 'ONE_TIME' ? 'Total Due at Signing' : 'Total Contract Value'}
+                </span>
                 <span className="text-xl font-bold text-[var(--color-primary)]">
-                  {formatCurrency(pricing.totalContractValue, currency)}
+                  {formatCurrency(
+                    isOneTimePayment(pricing.paymentModel) && pricing.paymentOption
+                      ? (pricing.taxAmount > 0 ? pricing.paymentOption.totalWithTax : pricing.paymentOption.upfrontPayment)
+                      : pricing.totalContractValue,
+                    currency,
+                  )}
                 </span>
               </div>
-              <SelectedPaymentDisplay option={pricing.paymentOption} currency={currency} compact />
             </>
           )}
         </CardContent>

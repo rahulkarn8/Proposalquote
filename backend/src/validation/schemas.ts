@@ -7,6 +7,11 @@ const hardwareBomLineSchema = z.object({
   unitPrice: z.coerce.number().min(0, 'Unit price must be 0 or greater'),
 });
 
+const engineeringEffortLineSchema = z.object({
+  item: z.string().min(1, 'Effort item is required'),
+  hours: z.coerce.number().min(0, 'Hours must be 0 or greater'),
+});
+
 const hardwareBomRefine = (data: { includesHardware: boolean; hardwareBom: z.infer<typeof hardwareBomLineSchema>[] }) => {
   if (!data.includesHardware) return true;
   return data.hardwareBom.length > 0 && data.hardwareBom.every((line) => line.item.trim().length > 0);
@@ -32,9 +37,10 @@ const quoteConfigurationBase = z.object({
   complexity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'VERY_HIGH']),
   engineeringEffort: z.coerce.number().min(0).max(2000, 'Maximum 2000 hours'),
   setupPricingMode: z.enum(['ENGINEERING_EFFORT', 'FEATURE_WISE']).default('ENGINEERING_EFFORT'),
+  engineeringEffortBreakdown: z.array(engineeringEffortLineSchema),
   currency: z.enum(['USD', 'EUR', 'GBP', 'INR']),
   startDate: z.string().min(1, 'Start date is required'),
-  solutionCoverage: z.array(z.string()).min(1, 'Select at least one solution coverage option'),
+  solutionCoverage: z.array(z.string()),
   warrantyPeriod: z.coerce.number().min(0),
   warrantyUnit: z.enum(['days', 'months']),
   coverageType: z.enum(['DEFECTS_ONLY', 'PERFORMANCE_GUARANTEE', 'FULL_MAINTENANCE']),
@@ -56,6 +62,18 @@ const quoteConfigurationBase = z.object({
 const engineeringEffortRefine = (data: { setupPricingMode: string; engineeringEffort: number }) =>
   data.setupPricingMode === 'FEATURE_WISE' || (data.engineeringEffort >= 8 && data.engineeringEffort <= 2000);
 
+const featureCoverageRefine = (data: { setupPricingMode: string; solutionCoverage: string[] }) =>
+  data.setupPricingMode !== 'FEATURE_WISE' || data.solutionCoverage.length > 0;
+
+const engineeringBreakdownRefine = (data: {
+  setupPricingMode: string;
+  engineeringEffortBreakdown: { hours: number }[];
+}) => {
+  if (data.setupPricingMode !== 'ENGINEERING_EFFORT') return true;
+  const total = data.engineeringEffortBreakdown.reduce((sum, line) => sum + line.hours, 0);
+  return total >= 8 && total <= 2000;
+};
+
 export const quoteConfigurationSchema = quoteConfigurationBase
   .refine(warrantyRefine, {
     message: 'Warranty period must be between 0 and 60 months',
@@ -72,6 +90,14 @@ export const quoteConfigurationSchema = quoteConfigurationBase
   .refine(engineeringEffortRefine, {
     message: 'Engineering effort must be between 8 and 2000 hours',
     path: ['engineeringEffort'],
+  })
+  .refine(featureCoverageRefine, {
+    message: 'Select at least one solution feature',
+    path: ['solutionCoverage'],
+  })
+  .refine(engineeringBreakdownRefine, {
+    message: 'Allocate between 8 and 2000 engineering hours across effort lines',
+    path: ['engineeringEffortBreakdown'],
   });
 
 export const createQuoteSchema = quoteConfigurationBase
@@ -93,6 +119,14 @@ export const createQuoteSchema = quoteConfigurationBase
   .refine(engineeringEffortRefine, {
     message: 'Engineering effort must be between 8 and 2000 hours',
     path: ['engineeringEffort'],
+  })
+  .refine(featureCoverageRefine, {
+    message: 'Select at least one solution feature',
+    path: ['solutionCoverage'],
+  })
+  .refine(engineeringBreakdownRefine, {
+    message: 'Allocate between 8 and 2000 engineering hours across effort lines',
+    path: ['engineeringEffortBreakdown'],
   });
 
 export const calculateQuoteSchema = quoteConfigurationSchema;

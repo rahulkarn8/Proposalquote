@@ -7,7 +7,6 @@ import {
   getTechnicalApproach,
   getTimelineWeeks,
   getExecutiveSummary,
-  getScopeDeliverables,
 } from './pricingEngine';
 import { getProblemTypeFactors } from '../data/problemTypes';
 import {
@@ -17,6 +16,8 @@ import {
   formatWarrantyClause,
 } from '../lib/labels';
 import { sumHardwareBom } from '../lib/hardwareBom';
+import { buildPdfPricingRows, groupEngineeringEffortsForPdf, groupSelectedFeatures } from '../lib/pdfFeatures';
+import { getQuoteLineItemsForPaymentModel } from '../lib/paymentModel';
 
 export interface PdfQuoteData {
   quoteNumber: string;
@@ -86,12 +87,12 @@ function writeBomTable(
   bom: { item: string; partNumber?: string; quantity: number; unitPrice: number }[],
   sym: string,
 ): number {
-  const colWidths = [180, 80, 50, 80, 80];
+  const colWidths = [175, 75, 45, 75, 75];
   const headers = ['Item', 'Part #', 'Qty', 'Unit', 'Total'];
   y = ensureSpace(doc, y, 40);
-  let tableTop = y;
+  const tableTop = y;
   let x = 50;
-  doc.fontSize(8).fillColor('#fff');
+  doc.font('Helvetica-Bold').fontSize(8).fillColor('#fff');
   doc.rect(50, tableTop, 495, 18).fill(MI_NAVY);
   for (let i = 0; i < headers.length; i++) {
     doc.text(headers[i], x + 4, tableTop + 5, { width: colWidths[i] });
@@ -99,13 +100,8 @@ function writeBomTable(
   }
 
   let rowY = tableTop + 22;
-  doc.fillColor(MI_DARK);
+  doc.font('Helvetica').fillColor(MI_DARK);
   for (const row of bom) {
-    if (rowY > PAGE_BOTTOM - 40) {
-      doc.addPage();
-      rowY = 50;
-    }
-    x = 50;
     const lineTotal = row.quantity * row.unitPrice;
     const cells = [
       row.item,
@@ -114,11 +110,22 @@ function writeBomTable(
       `${sym}${row.unitPrice.toLocaleString()}`,
       `${sym}${lineTotal.toLocaleString()}`,
     ];
+    const rowHeight = Math.max(
+      16,
+      ...cells.map((cell, i) => doc.heightOfString(cell, { width: colWidths[i] - 8 }) + 8),
+    );
+
+    if (rowY + rowHeight > PAGE_BOTTOM - 40) {
+      doc.addPage();
+      rowY = 50;
+    }
+
+    x = 50;
     for (let i = 0; i < cells.length; i++) {
-      doc.text(cells[i], x + 4, rowY, { width: colWidths[i] });
+      doc.text(cells[i], x + 4, rowY + 4, { width: colWidths[i] - 8 });
       x += colWidths[i];
     }
-    rowY += 18;
+    rowY += rowHeight;
   }
 
   doc.font('Helvetica-Bold');
@@ -126,6 +133,215 @@ function writeBomTable(
   doc.text(`${sym}${sumHardwareBom(bom).toLocaleString()}`, 50 + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] - 80, rowY + 4, { width: 80, align: 'right' });
   doc.font('Helvetica');
   return rowY + 28;
+}
+
+function writeGroupedFeatureScope(
+  doc: InstanceType<typeof PDFDocument>,
+  coverage: string[],
+  y: number,
+): number {
+  const groups = groupSelectedFeatures(coverage);
+
+  for (const group of groups) {
+    y = ensureSpace(doc, y, 28);
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(MI_NAVY)
+      .text(`${group.category} (${group.features.length})`, 50, y);
+    y += 16;
+    doc.font('Helvetica').fontSize(9).fillColor(MI_DARK);
+
+    for (const feature of group.features) {
+      y = ensureSpace(doc, y, 16);
+      doc.text(`• ${feature}`, 62, y, { width: 475 });
+      y += doc.heightOfString(`• ${feature}`, { width: 475 }) + 4;
+    }
+    y += 6;
+  }
+
+  return y + 4;
+}
+
+function writeGroupedEngineeringScope(
+  doc: InstanceType<typeof PDFDocument>,
+  breakdown: { item: string; hours: number }[],
+  y: number,
+): number {
+  const groups = groupEngineeringEffortsForPdf(breakdown);
+
+  for (const group of groups) {
+    y = ensureSpace(doc, y, 28);
+    const categoryHours = group.lines.reduce((sum, line) => sum + line.hours, 0);
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(MI_NAVY)
+      .text(`${group.category} (${categoryHours}h)`, 50, y);
+    y += 16;
+    doc.font('Helvetica').fontSize(9).fillColor(MI_DARK);
+
+    for (const line of group.lines) {
+      y = ensureSpace(doc, y, 16);
+      const text = `• ${line.item} — ${line.hours}h`;
+      doc.text(text, 62, y, { width: 475 });
+      y += doc.heightOfString(text, { width: 475 }) + 4;
+    }
+    y += 6;
+  }
+
+  return y + 4;
+}
+
+function writePricingTable(
+  doc: InstanceType<typeof PDFDocument>,
+  y: number,
+  rows: ReturnType<typeof buildPdfPricingRows>,
+  footer?: { label: string; total: string },
+): number {
+  const colWidths = [195, 55, 45, 85, 85];
+  const headers = ['Item', 'Type', 'Qty', 'Unit Price', 'Total'];
+  y = ensureSpace(doc, y, 40);
+  const tableTop = y;
+  let x = 50;
+
+  doc.font('Helvetica-Bold').fontSize(8).fillColor('#fff');
+  doc.rect(50, tableTop, 495, 18).fill(MI_NAVY);
+  for (let i = 0; i < headers.length; i++) {
+    doc.text(headers[i], x + 4, tableTop + 5, { width: colWidths[i] });
+    x += colWidths[i];
+  }
+
+  let rowY = tableTop + 22;
+  doc.font('Helvetica').fillColor(MI_DARK);
+
+  for (const row of rows) {
+    doc.font('Helvetica-Bold').fontSize(9);
+    const labelHeight = doc.heightOfString(row.label, { width: colWidths[0] - 8 });
+    doc.font('Helvetica').fontSize(7);
+    const sublabelHeight = row.sublabel
+      ? doc.heightOfString(row.sublabel, { width: colWidths[0] - 8 })
+      : 0;
+    const firstColHeight = labelHeight + sublabelHeight + 8;
+    const otherCells = [row.type, row.quantity, row.unitPrice, row.total];
+    doc.font('Helvetica').fontSize(8);
+    const otherHeights = otherCells.map((cell, i) =>
+      doc.heightOfString(cell, { width: colWidths[i + 1] - 8 }) + 8,
+    );
+    const rowHeight = Math.max(firstColHeight, ...otherHeights, 16);
+
+    if (rowY + rowHeight > PAGE_BOTTOM - 40) {
+      doc.addPage();
+      rowY = 50;
+    }
+
+    x = 50;
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(MI_DARK)
+      .text(row.label, x + 4, rowY + 4, { width: colWidths[0] - 8 });
+    if (row.sublabel) {
+      doc.font('Helvetica').fontSize(7).fillColor(MI_MUTED)
+        .text(row.sublabel, x + 4, rowY + 4 + labelHeight, { width: colWidths[0] - 8 });
+    }
+    x += colWidths[0];
+
+    for (let i = 0; i < otherCells.length; i++) {
+      doc.font('Helvetica').fontSize(8).fillColor(MI_DARK)
+        .text(otherCells[i], x + 4, rowY + 4, { width: colWidths[i + 1] - 8 });
+      x += colWidths[i + 1];
+    }
+    rowY += rowHeight;
+  }
+
+  if (footer) {
+    rowY = ensureSpace(doc, rowY, 28);
+    doc.rect(50, rowY, 495, 22).fill('#f5f5f5');
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(MI_NAVY)
+      .text(footer.label, 54, rowY + 6, { width: colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] - 8 });
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(MI_RED)
+      .text(footer.total, 50 + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3], rowY + 5, {
+        width: colWidths[4],
+        align: 'right',
+      });
+    rowY += 28;
+  }
+
+  doc.font('Helvetica').fontSize(10).fillColor(MI_DARK);
+  return rowY + 12;
+}
+
+function writeInvestmentSummary(
+  doc: InstanceType<typeof PDFDocument>,
+  y: number,
+  data: PdfQuoteData,
+  sym: string,
+): number {
+  const { pricing, config } = data;
+  const option = pricing.paymentOption;
+  const primaryTotal = pricing.taxAmount > 0 ? pricing.totalWithTax : pricing.totalContractValue;
+  const primaryLabel = pricing.taxAmount > 0 ? 'TOTAL PRICE (INCL. TAX)' : 'TOTAL PRICE';
+  const boxHeight = pricing.taxAmount > 0 ? 88 : 68;
+
+  y = ensureSpace(doc, y, boxHeight + 60);
+
+  doc.rect(50, y, 495, boxHeight).fill(MI_NAVY);
+  doc.rect(50, y, 495, 3).fill(MI_RED);
+
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#ffffff')
+    .text(option?.label ?? (config.paymentModel === 'ONE_TIME' ? 'One-Time Payment' : 'Monthly Subscription'), 62, y + 14);
+
+  doc.font('Helvetica').fontSize(9).fillColor('#e8e8e8')
+    .text(`${config.expectedLifetime}-month contract · ${data.currency}`, 62, y + 28);
+
+  doc.font('Helvetica-Bold').fontSize(11).fillColor('#ffffff')
+    .text(primaryLabel, 62, y + (pricing.taxAmount > 0 ? 44 : 40));
+  doc.font('Helvetica-Bold').fontSize(22).fillColor('#ffffff')
+    .text(`${sym}${primaryTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 62, y + (pricing.taxAmount > 0 ? 58 : 52), {
+      width: 471,
+      align: 'right',
+    });
+
+  if (pricing.taxAmount > 0) {
+    doc.font('Helvetica').fontSize(8).fillColor('#e8e8e8')
+      .text(
+        `Contract value ${sym}${pricing.totalContractValue.toLocaleString()} + tax ${sym}${pricing.taxAmount.toLocaleString()}`,
+        62,
+        y + 76,
+        { width: 471, align: 'right' },
+      );
+  }
+
+  y += boxHeight + 18;
+
+  if (option) {
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(MI_DARK).text('Payment Schedule', 50, y);
+    y += 16;
+    doc.font('Helvetica').fontSize(10).fillColor(MI_DARK);
+
+    if (option.type === 'ONE_TIME') {
+      doc.text(`Due at signing: ${sym}${option.upfrontPayment.toLocaleString()}`, 58, y);
+      y += 16;
+    } else {
+      doc.text(`Upfront at signing: ${sym}${option.upfrontPayment.toLocaleString()}`, 58, y);
+      y += 14;
+      doc.text(
+        `Monthly subscription: ${sym}${option.recurringPayment.toLocaleString()}/mo × ${option.recurringMonths} months`,
+        58,
+        y,
+      );
+      y += 14;
+      doc.font('Helvetica-Bold').fillColor(MI_NAVY)
+        .text(`Total contract value: ${sym}${option.totalContractValue.toLocaleString()}`, 58, y);
+      y += 16;
+      doc.font('Helvetica').fillColor(MI_DARK);
+    }
+  }
+
+  if (option?.type === 'MONTHLY_SUBSCRIPTION') {
+    doc.fontSize(9).fillColor(MI_MUTED);
+    doc.text(`Quarterly billing option (5% off): ${sym}${pricing.quarterlyFee.toLocaleString()}`, 58, y);
+    y += 13;
+    doc.text(`Annual billing option (15% off): ${sym}${pricing.annualFee.toLocaleString()}`, 58, y);
+    y += 13;
+    doc.text(`Estimated year 1 cost: ${sym}${pricing.year1Cost.toLocaleString()}`, 58, y);
+    y += 18;
+  }
+
+  doc.font('Helvetica').fontSize(10).fillColor(MI_DARK);
+  return y + 8;
 }
 
 function writeBullets(doc: InstanceType<typeof PDFDocument>, items: string[], y: number): number {
@@ -159,7 +375,6 @@ export async function generateProposalPdf(data: PdfQuoteData): Promise<string> {
     const factors = getProblemTypeFactors(data.config.problemType);
     const timeline = getTimelineWeeks(data.config);
     const approach = getTechnicalApproach(data.config);
-    const deliverables = getScopeDeliverables(data.config);
     const executiveSummary = getExecutiveSummary(data.config);
     const sym = getCurrencySymbol(data.currency);
     const clientName = data.config.clientName || 'Client';
@@ -196,7 +411,25 @@ export async function generateProposalPdf(data: PdfQuoteData): Promise<string> {
     }
 
     y = writeSectionTitle(doc, 'Scope & Deliverables', y);
-    y = writeBullets(doc, deliverables, y);
+    if (data.config.setupPricingMode === 'FEATURE_WISE') {
+      y = writeGroupedFeatureScope(doc, data.config.solutionCoverage, y);
+    } else {
+      const breakdown = data.config.engineeringEffortBreakdown?.filter((line) => line.hours > 0) ?? [];
+      if (breakdown.length > 0) {
+        y = writeGroupedEngineeringScope(doc, breakdown, y);
+      }
+    }
+    y = writeBullets(doc, [
+      `Integration with existing systems (${data.config.integrationComplexity.toLowerCase()} complexity)`,
+      `Production deployment targeting ${data.config.volume.toLocaleString()} ${data.config.volumeUnit}`,
+      `Documentation, knowledge transfer, and handover`,
+      ...(data.config.requiredLanguagesFrameworks
+        ? [`Implementation using ${data.config.requiredLanguagesFrameworks}`]
+        : []),
+      ...(data.config.includesHardware && data.pricing.hardwareBom.length > 0
+        ? [`Hardware supply & installation (${data.pricing.hardwareBom.length} BOM line${data.pricing.hardwareBom.length > 1 ? 's' : ''})`]
+        : []),
+    ], y);
 
     if (data.config.includesHardware && data.pricing.hardwareBom.length > 0) {
       y = writeSectionTitle(doc, 'Hardware Bill of Materials', y);
@@ -226,92 +459,36 @@ export async function generateProposalPdf(data: PdfQuoteData): Promise<string> {
     doc.addPage();
     y = 50;
 
-    const option = data.pricing.paymentOption;
-
     y = writeSectionTitle(doc, 'Investment Summary', y);
+    y = writeInvestmentSummary(doc, y, data, sym);
 
-    if (option) {
-      y = ensureSpace(doc, y, 80);
-      doc.font('Helvetica-Bold').fontSize(11).fillColor(MI_DARK).text(option.label, 50, y);
-      doc.font('Helvetica').fontSize(10);
-      y += 18;
-      doc.text(option.description, 50, y, { width: 495 });
-      y += doc.heightOfString(option.description, { width: 495 }) + 12;
+    y = writeSectionTitle(doc, 'Detailed Pricing Breakdown', y);
+    const detailRows = buildPdfPricingRows(
+      getQuoteLineItemsForPaymentModel(data.pricing),
+      sym,
+      data.config.setupPricingMode ?? 'ENGINEERING_EFFORT',
+    );
+    const grandTotalLabel = data.pricing.taxAmount > 0 ? 'GRAND TOTAL (INCL. TAX)' : 'GRAND TOTAL';
+    const grandTotalValue = data.pricing.taxAmount > 0
+      ? `${sym}${data.pricing.totalWithTax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : `${sym}${data.pricing.totalContractValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-      if (option.type === 'ONE_TIME') {
-        doc.text(`Due at signing: ${sym}${option.upfrontPayment.toLocaleString()}`, 50, y);
-        y += 15;
-      } else {
-        doc.text(`Upfront at signing: ${sym}${option.upfrontPayment.toLocaleString()}`, 50, y);
-        y += 15;
-        if (data.pricing.hardwareCost > 0) {
-          doc.fontSize(9).fillColor(MI_MUTED);
-          doc.text(
-            `(includes ${sym}${data.pricing.setupFee.toLocaleString()} setup + ${sym}${data.pricing.hardwareCost.toLocaleString()} hardware)`,
-            50,
-            y
-          );
-          doc.fontSize(10).fillColor(MI_DARK);
-          y += 14;
-        }
-        doc.text(
-          `Monthly subscription: ${sym}${option.recurringPayment.toLocaleString()}/mo × ${option.recurringMonths} months`,
+    y = writePricingTable(doc, y, detailRows, {
+      label: grandTotalLabel,
+      total: grandTotalValue,
+    });
+
+    if (data.pricing.taxAmount > 0) {
+      y = ensureSpace(doc, y, 20);
+      doc.font('Helvetica').fontSize(9).fillColor(MI_MUTED)
+        .text(
+          `Includes ${sym}${data.pricing.taxAmount.toLocaleString()} tax on total contract value.`,
           50,
-          y
+          y,
         );
-        y += 15;
-      }
-      doc.text(`Total contract value: ${sym}${option.totalContractValue.toLocaleString()}`, 50, y);
-      y += option.taxAmount > 0 ? 30 : 20;
+      y += 16;
     }
 
-    if (option?.type === 'MONTHLY_SUBSCRIPTION') {
-      doc.fontSize(9).fillColor(MI_MUTED);
-      doc.text(`Quarterly billing (5% discount): ${sym}${data.pricing.quarterlyFee.toLocaleString()}`, 50, y);
-      y += 14;
-      doc.text(`Annual billing (15% discount): ${sym}${data.pricing.annualFee.toLocaleString()}`, 50, y);
-      y += 14;
-      doc.text(`Year 1 total cost: ${sym}${data.pricing.year1Cost.toLocaleString()}`, 50, y);
-      y += 28;
-    } else {
-      y += 10;
-    }
-
-    y = writeSectionTitle(doc, 'Pricing Breakdown', y);
-    const tableTop = y;
-    const colWidths = [130, 70, 60, 80, 80];
-    const headers = ['Item', 'Type', 'Quantity', 'Unit Price', 'Total'];
-    let x = 50;
-    doc.fontSize(8).fillColor('#fff');
-    doc.rect(50, tableTop, 495, 18).fill(MI_NAVY);
-    for (let i = 0; i < headers.length; i++) {
-      doc.text(headers[i], x + 4, tableTop + 5, { width: colWidths[i] });
-      x += colWidths[i];
-    }
-
-    let rowY = tableTop + 22;
-    doc.fillColor(MI_DARK);
-    for (const item of data.pricing.lineItems) {
-      if (rowY > PAGE_BOTTOM - 40) {
-        doc.addPage();
-        rowY = 50;
-      }
-      x = 50;
-      const row = [
-        item.category,
-        item.recurring ? 'Monthly' : 'One-time',
-        String(item.quantity),
-        `${sym}${item.unitPrice.toLocaleString()}`,
-        `${sym}${item.total.toLocaleString()}`,
-      ];
-      for (let i = 0; i < row.length; i++) {
-        doc.text(row[i], x + 4, rowY, { width: colWidths[i] });
-        x += colWidths[i];
-      }
-      rowY += 18;
-    }
-
-    y = rowY + 20;
     y = writeSectionTitle(doc, 'Terms & Conditions', y);
     const warrantyText = formatWarrantyClause(data.config.warrantyPeriod, data.config.warrantyUnit, data.config.coverageType);
     const terms = [

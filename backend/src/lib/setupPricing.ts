@@ -11,6 +11,9 @@ import {
   getComplianceMultiplier,
   getSetupGlobalMultiplier,
 } from '../data/problemTypes';
+import {
+  sumEngineeringBreakdown,
+} from '../config/engineeringEffortCatalog';
 
 export type SetupPricingMode = 'ENGINEERING_EFFORT' | 'FEATURE_WISE';
 
@@ -69,20 +72,37 @@ export function calculateSetupFee(
     return { setupFee, effectiveEngineeringEffort, lineItems };
   }
 
-  const baseSetupFee = config.engineeringEffort * hourlyRate * complexityMultiplier;
-  const setupFee = baseSetupFee * scopeMultiplier;
+  const breakdown = config.engineeringEffortBreakdown ?? [];
+  const totalHours = breakdown.length > 0
+    ? sumEngineeringBreakdown(breakdown)
+    : config.engineeringEffort;
+  const hourUnitCost = hourlyRate * complexityMultiplier * scopeMultiplier;
+  const setupFee = totalHours * hourUnitCost;
+
+  const activeLines = breakdown.filter((line) => line.hours > 0);
+  const lineItems: PricingLineItem[] = activeLines.length > 0
+    ? activeLines.map((line) => ({
+        category: 'Setup & Engineering',
+        description: `${line.item} (${line.hours}h)`,
+        quantity: line.hours,
+        unitPrice: hourUnitCost,
+        total: line.hours * hourUnitCost,
+        recurring: false,
+        billingPeriod: 'ONE_TIME',
+      }))
+    : [{
+        category: 'Setup & Engineering',
+        description: `${totalHours}h engineering at $${hourlyRate}/hr (${config.complexity} complexity)`,
+        quantity: 1,
+        unitPrice: setupFee,
+        total: setupFee,
+        recurring: false,
+        billingPeriod: 'ONE_TIME',
+      }];
 
   return {
     setupFee,
-    effectiveEngineeringEffort: config.engineeringEffort,
-    lineItems: [{
-      category: 'Setup & Engineering',
-      description: `${config.engineeringEffort}h engineering at $${hourlyRate}/hr (${config.complexity} complexity)`,
-      quantity: 1,
-      unitPrice: setupFee,
-      total: setupFee,
-      recurring: false,
-      billingPeriod: 'ONE_TIME',
-    }],
+    effectiveEngineeringEffort: totalHours,
+    lineItems,
   };
 }

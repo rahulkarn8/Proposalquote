@@ -1,5 +1,6 @@
 import { QuoteConfiguration } from '../types';
 import { saveQuote } from './quoteService';
+import { buildDefaultEngineeringBreakdown } from '../config/engineeringEffortCatalog';
 
 const SAMPLE_QUOTES: { config: QuoteConfiguration; status: 'DRAFT' | 'FINAL' }[] = [
   {
@@ -13,6 +14,7 @@ const SAMPLE_QUOTES: { config: QuoteConfiguration; status: 'DRAFT' | 'FINAL' }[]
       complexity: 'MEDIUM',
       engineeringEffort: 200,
       setupPricingMode: 'FEATURE_WISE',
+      engineeringEffortBreakdown: [],
       currency: 'USD',
       startDate: '2026-07-01',
       solutionCoverage: [
@@ -54,6 +56,7 @@ const SAMPLE_QUOTES: { config: QuoteConfiguration; status: 'DRAFT' | 'FINAL' }[]
       complexity: 'HIGH',
       engineeringEffort: 480,
       setupPricingMode: 'ENGINEERING_EFFORT',
+      engineeringEffortBreakdown: buildDefaultEngineeringBreakdown(480),
       currency: 'USD',
       startDate: '2026-08-15',
       solutionCoverage: [
@@ -92,6 +95,7 @@ const SAMPLE_QUOTES: { config: QuoteConfiguration; status: 'DRAFT' | 'FINAL' }[]
       complexity: 'LOW',
       engineeringEffort: 80,
       setupPricingMode: 'ENGINEERING_EFFORT',
+      engineeringEffortBreakdown: buildDefaultEngineeringBreakdown(80),
       currency: 'EUR',
       startDate: '2026-09-01',
       solutionCoverage: [

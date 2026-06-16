@@ -31,6 +31,11 @@ export interface HardwareBomLine {
   unitPrice: number;
 }
 
+export interface EngineeringEffortLine {
+  item: string;
+  hours: number;
+}
+
 export type VolumeUnit = string;
 
 export type WarrantyUnit = 'days' | 'months';
@@ -60,6 +65,18 @@ export interface SolutionFeatureCatalogResponse {
   recommended: SolutionFeature[];
 }
 
+export interface EngineeringEffortCatalogItem {
+  label: string;
+  category: string;
+  description: string;
+  defaultShare: number;
+}
+
+export interface EngineeringEffortCatalogResponse {
+  efforts: EngineeringEffortCatalogItem[];
+  categories: string[];
+}
+
 export type SolutionCoverage = (typeof SOLUTION_COVERAGE_OPTIONS)[number] | string;
 
 export interface QuoteConfiguration {
@@ -71,6 +88,7 @@ export interface QuoteConfiguration {
   complexity: Complexity;
   engineeringEffort: number;
   setupPricingMode: SetupPricingMode;
+  engineeringEffortBreakdown: EngineeringEffortLine[];
   currency: Currency;
   startDate: string;
   solutionCoverage: SolutionCoverage[];

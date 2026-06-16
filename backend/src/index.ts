@@ -6,6 +6,7 @@ import {
   problemTypesRouter,
   pricingRouter,
   solutionFeaturesRouter,
+  engineeringEffortsRouter,
   errorHandler,
 } from './routes';
 import { adminRouter } from './routes/admin';
@@ -30,6 +31,7 @@ app.use('/api/exchange-rates', requireAuth, exchangeRouter);
 app.use('/api/problem-types', requireAuth, problemTypesRouter);
 app.use('/api/pricing', requireAuth, pricingRouter);
 app.use('/api/solution-features', requireAuth, solutionFeaturesRouter);
+app.use('/api/engineering-efforts', requireAuth, engineeringEffortsRouter);
 app.use('/api/admin', adminRouter);
 
 app.use(errorHandler);

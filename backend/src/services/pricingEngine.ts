@@ -329,7 +329,9 @@ export function getValidUntilDate(days = 30): Date {
 export function getTimelineWeeks(config: QuoteConfiguration): { setup: number; rampUp: number; steadyState: number } {
   const effort = resolveSetupPricingMode(config) === 'FEATURE_WISE'
     ? calculateSetupFee(config, getProblemTypeFactors(config.problemType)).effectiveEngineeringEffort
-    : config.engineeringEffort;
+    : (config.engineeringEffortBreakdown?.length
+      ? config.engineeringEffortBreakdown.reduce((sum, line) => sum + line.hours, 0)
+      : config.engineeringEffort);
   const setup = Math.ceil(effort / 40);
   const rampUp = Math.ceil(config.volume / 1000) + 2;
   const steadyState = config.expectedLifetime;
@@ -357,12 +359,18 @@ export function getTechnicalApproach(config: QuoteConfiguration): string[] {
     `that directly addresses the challenge described above. ${factors.description}`
   );
 
-  const coverageList = config.solutionCoverage.join(', ');
-  const pricingModeNote = resolveSetupPricingMode(config) === 'FEATURE_WISE'
-    ? `Setup is priced feature-by-feature across ${coverageList}.`
+  const pricingMode = resolveSetupPricingMode(config);
+  const coverageList = pricingMode === 'FEATURE_WISE'
+    ? config.solutionCoverage.join(', ')
+    : (config.engineeringEffortBreakdown ?? [])
+        .filter((line) => line.hours > 0)
+        .map((line) => `${line.item} (${line.hours}h)`)
+        .join(', ');
+  const pricingModeNote = pricingMode === 'FEATURE_WISE'
+    ? `Setup is priced feature-by-feature across selected scope items.`
     : `The engineering team will dedicate ${config.engineeringEffort} hours at ${config.complexity.toLowerCase().replace('_', ' ')} complexity.`;
   paragraphs.push(
-    `Our delivery scope includes ${coverageList}. ${pricingModeNote} ` +
+    `Our delivery scope includes ${coverageList || 'the agreed engineering workstreams'}. ${pricingModeNote} ` +
     `Integration complexity is ${config.integrationComplexity.toLowerCase()} into your existing environment. ` +
     `${config.requiredLanguagesFrameworks ? `Recommended technology stack: ${config.requiredLanguagesFrameworks}.` : ''}`
   );
@@ -380,8 +388,14 @@ export function getTechnicalApproach(config: QuoteConfiguration): string[] {
 
 export function getScopeDeliverables(config: QuoteConfiguration): string[] {
   const hardwareBom = getEffectiveHardwareBom(config.includesHardware, config.hardwareBom, config as QuoteConfiguration & { hardwareDescription?: string; hardwareCost?: number });
+  const pricingMode = resolveSetupPricingMode(config);
+  const scopeItems = pricingMode === 'FEATURE_WISE'
+    ? config.solutionCoverage.map((item) => `Delivery of ${item}`)
+    : (config.engineeringEffortBreakdown ?? [])
+        .filter((line) => line.hours > 0)
+        .map((line) => `${line.item} (${line.hours} engineering hours)`);
   const deliverables = [
-    ...config.solutionCoverage.map((item) => `Delivery of ${item}`),
+    ...scopeItems,
     `Integration with existing systems (${config.integrationComplexity.toLowerCase()} complexity)`,
     `Production deployment targeting ${config.volume.toLocaleString()} ${config.volumeUnit}`,
     `Documentation, knowledge transfer, and handover`,

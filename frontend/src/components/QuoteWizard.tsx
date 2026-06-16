@@ -3,11 +3,18 @@ import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { quoteFormSchema, QuoteFormValues } from '@/lib/schema';
 import { DEFAULT_CONFIG } from '@/types';
-import { saveQuote, generatePdf, downloadQuotePdf, getProblemTypes, getPricingRates, getSolutionFeatures } from '@/lib/api';
+import { saveQuote, generatePdf, downloadQuotePdf, getProblemTypes, getPricingRates, getSolutionFeatures, getEngineeringEfforts } from '@/lib/api';
 import type { PricingRates } from '@/lib/pricingRates';
 import { toQuoteConfiguration, normalizeLoadedConfig } from '@/lib/quoteConfig';
-import type { ProblemTypeFactors, QuoteConfiguration, SolutionFeature } from '@/types';
+import type { EngineeringEffortCatalogItem, ProblemTypeFactors, QuoteConfiguration, SolutionFeature } from '@/types';
 import { syncFeatureWiseEffort } from '@/lib/setupPricing';
+import {
+  buildDefaultEngineeringBreakdown,
+  mergeEngineeringBreakdown,
+  rescaleEngineeringBreakdown,
+  sumEngineeringBreakdown,
+} from '@/lib/engineeringEfforts';
+import { FALLBACK_ENGINEERING_CATEGORIES, FALLBACK_ENGINEERING_EFFORTS } from '@/lib/engineeringEffortCatalog';
 import { useDebouncedPricing } from '@/hooks/useDebouncedPricing';
 import { StepIndicator, STEPS } from '@/components/StepIndicator';
 import { QuotePreview } from '@/components/QuotePreview';
@@ -31,6 +38,8 @@ export function QuoteWizard() {
   const [solutionFeatures, setSolutionFeatures] = useState<SolutionFeature[]>([]);
   const [featureCategories, setFeatureCategories] = useState<string[]>([]);
   const [recommendedFeatures, setRecommendedFeatures] = useState<SolutionFeature[]>([]);
+  const [engineeringEfforts, setEngineeringEfforts] = useState<EngineeringEffortCatalogItem[]>(FALLBACK_ENGINEERING_EFFORTS);
+  const [engineeringCategories, setEngineeringCategories] = useState<string[]>(FALLBACK_ENGINEERING_CATEGORIES);
   const [savedQuoteId, setSavedQuoteId] = useState<string | null>(null);
   const [savedQuoteNumber, setSavedQuoteNumber] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -54,6 +63,7 @@ export function QuoteWizard() {
   const problemType = useWatch({ control: form.control, name: 'problemType' });
   const setupPricingMode = useWatch({ control: form.control, name: 'setupPricingMode' });
   const solutionCoverage = useWatch({ control: form.control, name: 'solutionCoverage' });
+  const engineeringEffort = useWatch({ control: form.control, name: 'engineeringEffort' });
   const complexity = useWatch({ control: form.control, name: 'complexity' });
   const clientName = useWatch({ control: form.control, name: 'clientName' });
 
@@ -67,6 +77,15 @@ export function QuoteWizard() {
       .then(([types, rates]) => {
         setProblemTypes(types);
         setPricingRates(rates);
+      })
+      .catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    getEngineeringEfforts()
+      .then((catalog) => {
+        setEngineeringEfforts(catalog.efforts);
+        setEngineeringCategories(catalog.categories);
       })
       .catch(console.error);
   }, []);
@@ -92,6 +111,37 @@ export function QuoteWizard() {
     );
   }, [setupPricingMode, solutionCoverage, problemType, complexity, problemTypes, pricingRates, form]);
 
+  useEffect(() => {
+    if (setupPricingMode !== 'ENGINEERING_EFFORT' || engineeringEfforts.length === 0) return;
+    const factors = problemTypes.find((p) => p.type === problemType);
+    const typicalHours = factors?.engineeringEffortRange.typical ?? engineeringEffort ?? DEFAULT_CONFIG.engineeringEffort;
+    const current = form.getValues('engineeringEffortBreakdown') ?? [];
+
+    if (current.length === 0) {
+      const initial = buildDefaultEngineeringBreakdown(engineeringEfforts, typicalHours);
+      form.setValue('engineeringEffortBreakdown', initial, { shouldValidate: true });
+      form.setValue('engineeringEffort', sumEngineeringBreakdown(initial), { shouldValidate: true });
+      return;
+    }
+
+    const currentTotal = sumEngineeringBreakdown(current);
+    if (engineeringEffort > 0 && currentTotal !== engineeringEffort) {
+      const rescaled = rescaleEngineeringBreakdown(
+        mergeEngineeringBreakdown(engineeringEfforts, current, typicalHours),
+        engineeringEffort,
+      );
+      form.setValue('engineeringEffortBreakdown', rescaled, { shouldValidate: true });
+    }
+  }, [setupPricingMode, engineeringEffort, engineeringEfforts, problemType, problemTypes, form]);
+
+  useEffect(() => {
+    if (setupPricingMode === 'FEATURE_WISE') {
+      form.setValue('solutionCoverage', form.getValues('solutionCoverage') ?? [], { shouldValidate: false });
+    } else {
+      form.setValue('solutionCoverage', [], { shouldValidate: false });
+    }
+  }, [setupPricingMode, form]);
+
   const isCompleteStep = step === STEPS.length - 1;
   const isReviewStep = step === STEPS.length - 2;
 
@@ -101,10 +151,12 @@ export function QuoteWizard() {
       setupPricingMode === 'ENGINEERING_EFFORT'
         ? ['volume', 'volumeUnit', 'complexity', 'setupPricingMode', 'engineeringEffort', 'currency', 'startDate']
         : ['volume', 'volumeUnit', 'complexity', 'setupPricingMode', 'currency', 'startDate'],
-      ['solutionCoverage', 'complianceRequirements', 'requiredLanguagesFrameworks', 'integrationComplexity'],
+      setupPricingMode === 'ENGINEERING_EFFORT'
+        ? ['engineeringEffortBreakdown', 'complianceRequirements', 'requiredLanguagesFrameworks', 'integrationComplexity']
+        : ['solutionCoverage', 'complianceRequirements', 'requiredLanguagesFrameworks', 'integrationComplexity'],
       ['warrantyPeriod', 'warrantyUnit', 'coverageType', 'supportHours', 'supportSLA', 'supportCostModel'],
       ['cloudProvider', 'estimatedMonthlyCloudCost', 'cloudCostModel', 'expectedLifetime', 'paymentModel', 'includesHardware', 'hardwareBom'],
-      [],
+      ['paymentModel'],
       [],
     ];
 
@@ -249,11 +301,23 @@ export function QuoteWizard() {
           solutionFeatures={solutionFeatures}
           featureCategories={featureCategories}
           recommendedFeatures={recommendedFeatures}
+          engineeringEfforts={engineeringEfforts}
+          engineeringCategories={engineeringCategories}
         />
       );
       case 3: return <StepWarranty form={form} />;
       case 4: return <StepCloud form={form} />;
-      case 5: return <StepReview form={form} pricing={pricing} problemTypeLabel={problemTypeLabel} />;
+      case 5: return (
+        <StepReview
+          form={form}
+          pricing={pricing}
+          problemTypeLabel={problemTypeLabel}
+          solutionFeatures={solutionFeatures}
+          featureCategories={featureCategories}
+          engineeringEfforts={engineeringEfforts}
+          engineeringCategories={engineeringCategories}
+        />
+      );
       case 6: return (
         <StepComplete
           quoteNumber={savedQuoteNumber ?? '—'}

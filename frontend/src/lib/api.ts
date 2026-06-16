@@ -141,6 +141,10 @@ export async function getSolutionFeatures(problemType?: string): Promise<import(
   return request(`/solution-features${query}`);
 }
 
+export async function getEngineeringEfforts(): Promise<import('@/types').EngineeringEffortCatalogResponse> {
+  return request('/engineering-efforts');
+}
+
 export async function getProblemTypeFactors(type: string): Promise<ProblemTypeFactors> {
   const slug = type.toLowerCase().replace(/_/g, '-');
   return request(`/problem-types/${slug}/factors`);

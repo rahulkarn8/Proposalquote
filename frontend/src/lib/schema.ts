@@ -12,6 +12,11 @@ const hardwareBomLineSchema = z.object({
   unitPrice: z.coerce.number().min(0, 'Unit price must be 0 or greater'),
 });
 
+const engineeringEffortLineSchema = z.object({
+  item: z.string().min(1, 'Effort item is required'),
+  hours: z.coerce.number().min(0, 'Hours must be 0 or greater'),
+});
+
 export const quoteFormSchema = z.object({
   clientName: z.string().min(1, 'Client name is required'),
   problemStatement: z.string().min(20, 'Please provide a brief problem statement (min 20 characters)').max(2000),
@@ -21,9 +26,10 @@ export const quoteFormSchema = z.object({
   complexity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'VERY_HIGH']),
   engineeringEffort: z.coerce.number().min(0).max(2000, 'Maximum 2000 hours'),
   setupPricingMode: z.enum(['ENGINEERING_EFFORT', 'FEATURE_WISE']),
+  engineeringEffortBreakdown: z.array(engineeringEffortLineSchema),
   currency: z.enum(['USD', 'EUR', 'GBP', 'INR']),
   startDate: z.string().min(1, 'Start date is required'),
-  solutionCoverage: z.array(z.string()).min(1, 'Select at least one coverage option'),
+  solutionCoverage: z.array(z.string()),
   warrantyPeriod: z.coerce.number().min(0),
   warrantyUnit: z.enum(['days', 'months']),
   coverageType: z.enum(['DEFECTS_ONLY', 'PERFORMANCE_GUARANTEE', 'FULL_MAINTENANCE']),
@@ -46,6 +52,16 @@ export const quoteFormSchema = z.object({
 }).refine(
   (data) => data.setupPricingMode === 'FEATURE_WISE' || (data.engineeringEffort >= 8 && data.engineeringEffort <= 2000),
   { message: 'Engineering effort must be between 8 and 2000 hours', path: ['engineeringEffort'] }
+).refine(
+  (data) => data.setupPricingMode !== 'FEATURE_WISE' || data.solutionCoverage.length > 0,
+  { message: 'Select at least one solution feature', path: ['solutionCoverage'] }
+).refine(
+  (data) => {
+    if (data.setupPricingMode !== 'ENGINEERING_EFFORT') return true;
+    const total = data.engineeringEffortBreakdown.reduce((sum, line) => sum + line.hours, 0);
+    return total >= 8 && total <= 2000;
+  },
+  { message: 'Allocate between 8 and 2000 engineering hours across effort lines', path: ['engineeringEffortBreakdown'] }
 ).refine(
   (data) => !data.includesHardware || (data.hardwareBom.length > 0 && data.hardwareBom.every((l) => l.item.trim())),
   { message: 'Add at least one complete BOM line', path: ['hardwareBom'] }

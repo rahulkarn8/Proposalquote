@@ -15,15 +15,31 @@ import {
   SUPPORT_SLA_LABELS,
   formatWarrantyClause,
 } from '@/lib/labels';
-import { SETUP_PRICING_MODE_LABELS } from '@/types';
+import { SETUP_PRICING_MODE_LABELS, type EngineeringEffortCatalogItem, type SolutionFeature } from '@/types';
+import { SolutionCoverageSummary } from '@/components/SolutionCoverageSummary';
+import { EngineeringEffortSummary } from '@/components/EngineeringEffortSummary';
+import { PaymentModelSelector } from '@/components/PaymentModelSelector';
+import { getQuoteLineItemsForPaymentModel, isOneTimePayment } from '@/lib/paymentModel';
 
 interface StepReviewProps {
   form: UseFormReturn<QuoteFormValues>;
   pricing: PricingBreakdown | null;
   problemTypeLabel?: string;
+  solutionFeatures?: SolutionFeature[];
+  featureCategories?: string[];
+  engineeringEfforts?: EngineeringEffortCatalogItem[];
+  engineeringCategories?: string[];
 }
 
-export function StepReview({ form, pricing, problemTypeLabel }: StepReviewProps) {
+export function StepReview({
+  form,
+  pricing,
+  problemTypeLabel,
+  solutionFeatures,
+  featureCategories,
+  engineeringEfforts,
+  engineeringCategories,
+}: StepReviewProps) {
   const values = form.getValues();
   const currency = values.currency;
 
@@ -120,13 +136,25 @@ export function StepReview({ form, pricing, problemTypeLabel }: StepReviewProps)
       <SupportClauseSummary values={values} title="Support Clause (as it appears in the proposal)" />
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Solution Coverage</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-base">
+            {values.setupPricingMode === 'FEATURE_WISE' ? 'Solution Coverage' : 'Engineering Effort'}
+          </CardTitle>
+        </CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {values.solutionCoverage.map((item) => (
-              <Badge key={item} variant="secondary">{item}</Badge>
-            ))}
-          </div>
+          {values.setupPricingMode === 'FEATURE_WISE' ? (
+            <SolutionCoverageSummary
+              selected={values.solutionCoverage}
+              solutionFeatures={solutionFeatures}
+              featureCategories={featureCategories}
+            />
+          ) : (
+            <EngineeringEffortSummary
+              breakdown={values.engineeringEffortBreakdown ?? []}
+              efforts={engineeringEfforts}
+              categories={engineeringCategories}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -136,10 +164,14 @@ export function StepReview({ form, pricing, problemTypeLabel }: StepReviewProps)
             <CardTitle className="text-base">Final Quote</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            <PaymentModelSelector form={form} compact />
+
             <SelectedPaymentDisplay option={pricing.paymentOption} currency={currency} />
 
             <div className="border-t pt-4">
-              <p className="text-sm font-medium mb-3">Line Item Breakdown</p>
+              <p className="text-sm font-medium mb-3">
+                {isOneTimePayment(pricing.paymentModel) ? 'One-Time Quote Breakdown' : 'Subscription Quote Breakdown'}
+              </p>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -152,9 +184,14 @@ export function StepReview({ form, pricing, problemTypeLabel }: StepReviewProps)
                     </tr>
                   </thead>
                   <tbody>
-                    {pricing.lineItems.map((item, index) => (
+                    {getQuoteLineItemsForPaymentModel(pricing).map((item, index) => (
                       <tr key={`${item.category}-${index}`} className="border-b border-[var(--color-border)]">
-                        <td className="py-2">{item.category}</td>
+                        <td className="py-2">
+                          <span className="block">{item.category}</span>
+                          {item.description && item.description !== item.category && (
+                            <span className="block text-xs text-[var(--color-muted-foreground)] mt-0.5">{item.description}</span>
+                          )}
+                        </td>
                         <td className="py-2">{item.recurring ? 'Monthly' : 'One-time'}</td>
                         <td className="text-right py-2">{item.quantity}</td>
                         <td className="text-right py-2">{formatCurrency(item.unitPrice, currency)}</td>

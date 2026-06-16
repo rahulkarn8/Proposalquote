@@ -6,37 +6,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { HardwareBomTable } from '@/components/HardwareBomTable';
-import type { CloudProvider, CloudCostModel, PaymentModel } from '@/types';
-import { CreditCard, CalendarClock, HardDrive } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { PaymentModelSelector } from '@/components/PaymentModelSelector';
+import type { CloudProvider, CloudCostModel } from '@/types';
+import { HardDrive } from 'lucide-react';
 import { createEmptyBomLine } from '@/lib/hardwareBom';
 
 interface StepCloudProps {
   form: UseFormReturn<QuoteFormValues>;
 }
 
-const PAYMENT_MODELS: {
-  value: PaymentModel;
-  label: string;
-  description: string;
-  icon: typeof CreditCard;
-}[] = [
-  {
-    value: 'ONE_TIME',
-    label: 'One-Time Payment',
-    description: 'Single upfront payment for the full contract value. No recurring invoices.',
-    icon: CreditCard,
-  },
-  {
-    value: 'MONTHLY_SUBSCRIPTION',
-    label: 'Monthly Subscription',
-    description: 'Setup fee at signing, then a fixed monthly fee for the contract term.',
-    icon: CalendarClock,
-  },
-];
-
 export function StepCloud({ form }: StepCloudProps) {
-  const paymentModel = form.watch('paymentModel');
   const includesHardware = form.watch('includesHardware');
   const hardwareBom = form.watch('hardwareBom') ?? [];
   const currency = form.watch('currency');
@@ -60,34 +39,7 @@ export function StepCloud({ form }: StepCloudProps) {
         </p>
       </div>
 
-      <div className="space-y-3">
-        <Label>Payment Model</Label>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {PAYMENT_MODELS.map((model) => {
-            const Icon = model.icon;
-            const selected = paymentModel === model.value;
-            return (
-              <button
-                key={model.value}
-                type="button"
-                onClick={() => form.setValue('paymentModel', model.value, { shouldValidate: true })}
-                className={cn(
-                  'text-left rounded-lg border-2 p-4 transition-colors',
-                  selected
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5'
-                    : 'border-[var(--color-border)] hover:border-[var(--color-primary)]/40'
-                )}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <Icon className={cn('w-5 h-5', selected ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted-foreground)]')} />
-                  <span className="font-medium">{model.label}</span>
-                </div>
-                <p className="text-sm text-[var(--color-muted-foreground)]">{model.description}</p>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <PaymentModelSelector form={form} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">

@@ -6,6 +6,16 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2 } from 'lucide-react';
 import { SelectedPaymentDisplay } from '@/components/PaymentOptionsDisplay';
 import { HardwareBomSummary } from '@/components/HardwareBomTable';
+import { isOneTimePayment } from '@/lib/paymentModel';
+
+function getPrimaryQuoteTotal(pricing: PricingBreakdown): number {
+  if (!isOneTimePayment(pricing.paymentModel) || !pricing.paymentOption) {
+    return pricing.totalContractValue;
+  }
+  return pricing.taxAmount > 0
+    ? pricing.paymentOption.totalWithTax
+    : pricing.paymentOption.upfrontPayment;
+}
 
 interface QuotePreviewProps {
   pricing: PricingBreakdown | null;
@@ -54,6 +64,8 @@ export const QuotePreview = memo(function QuotePreview({
     );
   }
 
+  const isOneTime = isOneTimePayment(pricing.paymentModel);
+
   return (
     <Card className={`sticky top-4 transition-opacity duration-200 ${isRefreshing ? 'opacity-80' : 'opacity-100'}`}>
       <CardHeader>
@@ -66,6 +78,11 @@ export const QuotePreview = memo(function QuotePreview({
           </span>
           <Badge variant="secondary">{currency}</Badge>
         </CardTitle>
+        {pricing.paymentOption && (
+          <p className="text-xs text-[var(--color-muted-foreground)]">
+            {pricing.paymentOption.label}
+          </p>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         {pricing.paymentOption ? (
@@ -76,18 +93,22 @@ export const QuotePreview = memo(function QuotePreview({
               <span className="text-[var(--color-muted-foreground)]">Setup Fee</span>
               <span className="font-medium">{formatCurrency(pricing.setupFee, currency)}</span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-[var(--color-muted-foreground)]">Monthly (MRR)</span>
-              <span className="font-medium">{formatCurrency(pricing.monthlyFee, currency)}</span>
-            </div>
+            {!isOneTime && (
+              <div className="flex justify-between text-sm">
+                <span className="text-[var(--color-muted-foreground)]">Monthly (MRR)</span>
+                <span className="font-medium">{formatCurrency(pricing.monthlyFee, currency)}</span>
+              </div>
+            )}
           </div>
         )}
 
         <div className="border-t pt-3">
           <div className="flex justify-between">
-            <span className="font-medium">Total Contract Value</span>
+            <span className="font-medium">
+              {isOneTime ? 'Total Due at Signing' : 'Total Contract Value'}
+            </span>
             <span className="text-lg font-bold text-[var(--color-primary)]">
-              {formatCurrency(pricing.totalContractValue, currency)}
+              {formatCurrency(getPrimaryQuoteTotal(pricing), currency)}
             </span>
           </div>
           {pricing.taxAmount > 0 && (
@@ -97,27 +118,33 @@ export const QuotePreview = memo(function QuotePreview({
             </div>
           )}
           <p className="text-xs text-[var(--color-muted-foreground)] mt-1">
-            {contractMonths} month contract
+            {isOneTime
+              ? 'Single upfront payment — no recurring invoices'
+              : `${contractMonths} month subscription contract`}
           </p>
         </div>
 
-        <div className="border-t pt-3 space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-[var(--color-muted-foreground)]">Quarterly (5% off)</span>
-            <span>{formatCurrency(pricing.quarterlyFee, currency)}</span>
+        {!isOneTime && (
+          <div className="border-t pt-3 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-[var(--color-muted-foreground)]">Quarterly (5% off)</span>
+              <span>{formatCurrency(pricing.quarterlyFee, currency)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-[var(--color-muted-foreground)]">Annual (15% off)</span>
+              <span>{formatCurrency(pricing.annualFee, currency)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-[var(--color-muted-foreground)]">Year 1 Cost</span>
+              <span className="font-semibold">{formatCurrency(pricing.year1Cost, currency)}</span>
+            </div>
           </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-[var(--color-muted-foreground)]">Annual (15% off)</span>
-            <span>{formatCurrency(pricing.annualFee, currency)}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-[var(--color-muted-foreground)]">Year 1 Cost</span>
-            <span className="font-semibold">{formatCurrency(pricing.year1Cost, currency)}</span>
-          </div>
-        </div>
+        )}
 
         <div className="border-t pt-3">
-          <p className="text-xs font-medium mb-2">Breakdown</p>
+          <p className="text-xs font-medium mb-2">
+            {isOneTime ? 'Included in total' : 'Monthly breakdown'}
+          </p>
           <div className="space-y-1 text-xs text-[var(--color-muted-foreground)]">
             <div className="flex justify-between">
               <span>Cloud</span>

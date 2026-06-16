@@ -37,6 +37,23 @@ export interface SolutionFeature {
   recommended?: boolean;
 }
 
+export interface EngineeringEffortLine {
+  item: string;
+  hours: number;
+}
+
+export interface EngineeringEffortCatalogItem {
+  label: string;
+  category: string;
+  description: string;
+  defaultShare: number;
+}
+
+export interface EngineeringEffortCatalogResponse {
+  efforts: EngineeringEffortCatalogItem[];
+  categories: string[];
+}
+
 export interface SolutionFeatureCatalogResponse {
   features: SolutionFeature[];
   categories: string[];
@@ -64,6 +81,7 @@ export interface QuoteConfiguration {
   complexity: Complexity;
   engineeringEffort: number;
   setupPricingMode: SetupPricingMode;
+  engineeringEffortBreakdown: EngineeringEffortLine[];
   currency: Currency;
   startDate: string;
   solutionCoverage: string[];
@@ -240,9 +258,10 @@ export const DEFAULT_CONFIG: QuoteConfiguration = {
   complexity: 'MEDIUM',
   engineeringEffort: 200,
   setupPricingMode: 'ENGINEERING_EFFORT',
+  engineeringEffortBreakdown: [],
   currency: 'USD',
   startDate: new Date().toISOString().split('T')[0],
-  solutionCoverage: ['Data preprocessing & cleaning', 'API endpoint deployment'],
+  solutionCoverage: [],
   warrantyPeriod: 6,
   warrantyUnit: 'months',
   coverageType: 'DEFECTS_ONLY',

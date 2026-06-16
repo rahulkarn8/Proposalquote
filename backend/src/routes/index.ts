@@ -206,6 +206,29 @@ pricingRouter.get('/rates', async (_req: Request, res: Response, next: NextFunct
   }
 });
 
+export const engineeringEffortsRouter = Router();
+
+engineeringEffortsRouter.get('/', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const {
+      ALL_ENGINEERING_EFFORTS,
+      getEngineeringCategoryOrder,
+    } = await import('../config/engineeringEffortCatalog');
+
+    res.json({
+      efforts: ALL_ENGINEERING_EFFORTS.map((effort) => ({
+        label: effort.label,
+        category: effort.category,
+        description: effort.description,
+        defaultShare: effort.defaultShare,
+      })),
+      categories: getEngineeringCategoryOrder(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export const solutionFeaturesRouter = Router();
 
 solutionFeaturesRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
