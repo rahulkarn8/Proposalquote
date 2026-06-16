@@ -18,13 +18,18 @@ export function getHourlyRate(complexity: Complexity): number {
   return getAdminSettings().hourlyRates[complexity];
 }
 
-export function getCoverageMultiplier(coverage: string[]): number {
+export function getCoverageItemMultiplier(item: string): number {
   const { coverageMultipliers, setupFeeConfig } = getAdminSettings();
-  let multiplier = 1.0;
-  for (const item of coverage) {
-    multiplier += coverageMultipliers[item] ?? setupFeeConfig.defaultCoverageMultiplier;
-  }
-  return multiplier;
+  return coverageMultipliers[item] ?? setupFeeConfig.defaultCoverageMultiplier;
+}
+
+/** Sum of feature weight multipliers (feature-wise setup pricing). */
+export function getFeatureCoverageSum(coverage: string[]): number {
+  return coverage.reduce((sum, item) => sum + getCoverageItemMultiplier(item), 0);
+}
+
+export function getCoverageMultiplier(coverage: string[]): number {
+  return 1 + getFeatureCoverageSum(coverage);
 }
 
 export function getIntegrationMultiplier(complexity: 'LOW' | 'MEDIUM' | 'HIGH'): number {
@@ -82,6 +87,16 @@ export function getDefaultCurrency() {
 export function getVolumeTier(volume: number): { discount: number; label: string; requiresCustomPricing: boolean } {
   const tiers = getAdminSettings().volumeTiers;
   for (const tier of tiers) {
+    if (tier.requiresCustomPricing) {
+      if (volume <= tier.maxVolume) {
+        return {
+          discount: tier.discount,
+          label: tier.label,
+          requiresCustomPricing: true,
+        };
+      }
+      continue;
+    }
     if (volume <= tier.maxVolume) {
       return {
         discount: tier.discount,

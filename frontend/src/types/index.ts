@@ -9,8 +9,16 @@ export type CloudProvider = 'AWS' | 'AZURE' | 'GCP' | 'NONE';
 export type CloudCostModel = 'FIXED' | 'VARIABLE_BY_VOLUME';
 export type ComplianceRequirement = 'GDPR' | 'HIPAA' | 'SOC2' | 'NONE';
 export type IntegrationComplexity = 'LOW' | 'MEDIUM' | 'HIGH';
+export type SetupPricingMode = 'ENGINEERING_EFFORT' | 'FEATURE_WISE';
 export type PaymentModel = 'ONE_TIME' | 'MONTHLY_SUBSCRIPTION';
 export type VolumeUnit = string;
+
+export interface HardwareBomLine {
+  item: string;
+  partNumber?: string;
+  quantity: number;
+  unitPrice: number;
+}
 
 export const VOLUME_UNITS = [
   'documents/month', 'images/day', 'requests/second', 'drawings/month', 'signals/hour',
@@ -21,6 +29,21 @@ export const VOLUME_UNITS = [
 ] as const;
 export type WarrantyUnit = 'days' | 'months';
 
+export interface SolutionFeature {
+  label: string;
+  category: string;
+  description: string;
+  multiplier: number;
+  recommended?: boolean;
+}
+
+export interface SolutionFeatureCatalogResponse {
+  features: SolutionFeature[];
+  categories: string[];
+  recommended: SolutionFeature[];
+}
+
+/** Core platform features (legacy fallback when API unavailable) */
 export const SOLUTION_COVERAGE_OPTIONS = [
   'Data preprocessing & cleaning',
   'Model training & fine-tuning',
@@ -40,6 +63,7 @@ export interface QuoteConfiguration {
   volumeUnit: VolumeUnit;
   complexity: Complexity;
   engineeringEffort: number;
+  setupPricingMode: SetupPricingMode;
   currency: Currency;
   startDate: string;
   solutionCoverage: string[];
@@ -57,6 +81,8 @@ export interface QuoteConfiguration {
   integrationComplexity: IntegrationComplexity;
   expectedLifetime: number;
   paymentModel: PaymentModel;
+  includesHardware: boolean;
+  hardwareBom: HardwareBomLine[];
 }
 
 export interface PricingLineItem {
@@ -101,6 +127,8 @@ export interface PricingBreakdown {
   complexityMultiplier: number;
   integrationMultiplier: number;
   coverageMultiplier: number;
+  setupPricingMode: SetupPricingMode;
+  effectiveEngineeringEffort: number;
   volumeProcessingFee: number;
   cloudCostMonthly: number;
   supportCostMonthly: number;
@@ -109,6 +137,8 @@ export interface PricingBreakdown {
   volumeDiscount: number;
   volumeTierLabel: string;
   requiresCustomPricing: boolean;
+  hardwareCost: number;
+  hardwareBom: HardwareBomLine[];
 }
 
 export interface ProblemTypeFactors {
@@ -189,11 +219,16 @@ export interface QuoteAnalytics {
   }[];
 }
 
+export const SETUP_PRICING_MODE_LABELS: Record<SetupPricingMode, string> = {
+  ENGINEERING_EFFORT: 'Engineering effort (hours × rate)',
+  FEATURE_WISE: 'Feature-wise (selected scope items)',
+};
+
 export const COMPLEXITY_LABELS: Record<Complexity, string> = {
-  LOW: 'Low — Junior engineer ($50/hr)',
-  MEDIUM: 'Medium — Mid-level ($100/hr)',
-  HIGH: 'High — Senior ($150/hr)',
-  VERY_HIGH: 'Very High — Architect ($250/hr)',
+  LOW: 'Low — Junior engineer',
+  MEDIUM: 'Medium — Mid-level',
+  HIGH: 'High — Senior',
+  VERY_HIGH: 'Very High — Architect',
 };
 
 export const DEFAULT_CONFIG: QuoteConfiguration = {
@@ -204,6 +239,7 @@ export const DEFAULT_CONFIG: QuoteConfiguration = {
   volumeUnit: 'documents/month',
   complexity: 'MEDIUM',
   engineeringEffort: 200,
+  setupPricingMode: 'ENGINEERING_EFFORT',
   currency: 'USD',
   startDate: new Date().toISOString().split('T')[0],
   solutionCoverage: ['Data preprocessing & cleaning', 'API endpoint deployment'],
@@ -221,4 +257,6 @@ export const DEFAULT_CONFIG: QuoteConfiguration = {
   integrationComplexity: 'MEDIUM',
   expectedLifetime: 12,
   paymentModel: 'MONTHLY_SUBSCRIPTION',
+  includesHardware: false,
+  hardwareBom: [],
 };

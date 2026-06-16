@@ -16,6 +16,7 @@ import {
   formatSupportClause,
   formatWarrantyClause,
 } from '../lib/labels';
+import { sumHardwareBom } from '../lib/hardwareBom';
 
 export interface PdfQuoteData {
   quoteNumber: string;
@@ -77,6 +78,54 @@ function writeParagraph(doc: InstanceType<typeof PDFDocument>, text: string, y: 
   y = ensureSpace(doc, y, 40);
   doc.fontSize(10).fillColor(MI_DARK).text(text, 50, y, { width: 495, align: 'justify' });
   return y + doc.heightOfString(text, { width: 495 }) + 12;
+}
+
+function writeBomTable(
+  doc: InstanceType<typeof PDFDocument>,
+  y: number,
+  bom: { item: string; partNumber?: string; quantity: number; unitPrice: number }[],
+  sym: string,
+): number {
+  const colWidths = [180, 80, 50, 80, 80];
+  const headers = ['Item', 'Part #', 'Qty', 'Unit', 'Total'];
+  y = ensureSpace(doc, y, 40);
+  let tableTop = y;
+  let x = 50;
+  doc.fontSize(8).fillColor('#fff');
+  doc.rect(50, tableTop, 495, 18).fill(MI_NAVY);
+  for (let i = 0; i < headers.length; i++) {
+    doc.text(headers[i], x + 4, tableTop + 5, { width: colWidths[i] });
+    x += colWidths[i];
+  }
+
+  let rowY = tableTop + 22;
+  doc.fillColor(MI_DARK);
+  for (const row of bom) {
+    if (rowY > PAGE_BOTTOM - 40) {
+      doc.addPage();
+      rowY = 50;
+    }
+    x = 50;
+    const lineTotal = row.quantity * row.unitPrice;
+    const cells = [
+      row.item,
+      row.partNumber?.trim() || '—',
+      String(row.quantity),
+      `${sym}${row.unitPrice.toLocaleString()}`,
+      `${sym}${lineTotal.toLocaleString()}`,
+    ];
+    for (let i = 0; i < cells.length; i++) {
+      doc.text(cells[i], x + 4, rowY, { width: colWidths[i] });
+      x += colWidths[i];
+    }
+    rowY += 18;
+  }
+
+  doc.font('Helvetica-Bold');
+  doc.text('Subtotal', 50 + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] - 60, rowY + 4, { width: 80, align: 'right' });
+  doc.text(`${sym}${sumHardwareBom(bom).toLocaleString()}`, 50 + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3] + colWidths[4] - 80, rowY + 4, { width: 80, align: 'right' });
+  doc.font('Helvetica');
+  return rowY + 28;
 }
 
 function writeBullets(doc: InstanceType<typeof PDFDocument>, items: string[], y: number): number {
@@ -149,9 +198,14 @@ export async function generateProposalPdf(data: PdfQuoteData): Promise<string> {
     y = writeSectionTitle(doc, 'Scope & Deliverables', y);
     y = writeBullets(doc, deliverables, y);
 
+    if (data.config.includesHardware && data.pricing.hardwareBom.length > 0) {
+      y = writeSectionTitle(doc, 'Hardware Bill of Materials', y);
+      y = writeBomTable(doc, y, data.pricing.hardwareBom, sym);
+    }
+
     y = writeSectionTitle(doc, 'Project Timeline', y);
     y = writeBullets(doc, [
-      `Phase 1 — Setup & Engineering: ${timeline.setup} weeks (${data.config.engineeringEffort} engineering hours)`,
+      `Phase 1 — Setup & Engineering: ${timeline.setup} weeks (${data.pricing.effectiveEngineeringEffort ?? data.config.engineeringEffort} engineering hours)`,
       `Phase 2 — Ramp-up & Validation: ${timeline.rampUp} weeks`,
       `Phase 3 — Steady-state Operations: ${timeline.steadyState} months contract term`,
       `Target go-live date: ${data.config.startDate}`,
@@ -163,6 +217,9 @@ export async function generateProposalPdf(data: PdfQuoteData): Promise<string> {
       `Support: ${formatSupportClause(data.config.supportHours, data.config.supportSLA, data.config.supportCostModel)}`,
       `Cloud platform: ${data.config.cloudProvider}`,
       `Compliance: ${data.config.complianceRequirements.filter((c) => c !== 'NONE').join(', ') || 'Standard industry practices'}`,
+      ...(data.pricing.hardwareCost > 0
+        ? [`Hardware BOM subtotal: ${sym}${data.pricing.hardwareCost.toLocaleString()} one-time (${data.pricing.hardwareBom.length} line${data.pricing.hardwareBom.length > 1 ? 's' : ''})`]
+        : []),
     ], y);
 
     // Pricing page
@@ -185,8 +242,18 @@ export async function generateProposalPdf(data: PdfQuoteData): Promise<string> {
         doc.text(`Due at signing: ${sym}${option.upfrontPayment.toLocaleString()}`, 50, y);
         y += 15;
       } else {
-        doc.text(`Setup fee (upfront): ${sym}${option.upfrontPayment.toLocaleString()}`, 50, y);
+        doc.text(`Upfront at signing: ${sym}${option.upfrontPayment.toLocaleString()}`, 50, y);
         y += 15;
+        if (data.pricing.hardwareCost > 0) {
+          doc.fontSize(9).fillColor(MI_MUTED);
+          doc.text(
+            `(includes ${sym}${data.pricing.setupFee.toLocaleString()} setup + ${sym}${data.pricing.hardwareCost.toLocaleString()} hardware)`,
+            50,
+            y
+          );
+          doc.fontSize(10).fillColor(MI_DARK);
+          y += 14;
+        }
         doc.text(
           `Monthly subscription: ${sym}${option.recurringPayment.toLocaleString()}/mo × ${option.recurringMonths} months`,
           50,
@@ -251,7 +318,9 @@ export async function generateProposalPdf(data: PdfQuoteData): Promise<string> {
       `This proposal is prepared exclusively for ${clientName} and is valid until ${formatDate(data.validUntil)}.`,
       `Warranty: ${warrantyText}${data.config.warrantyPeriod > 0 ? ' — bug fixes included at no additional cost' : ''}`,
       `Support: ${SUPPORT_HOURS_LABELS[data.config.supportHours]} with ${SUPPORT_SLA_LABELS[data.config.supportSLA]} response SLA`,
-      `Payment Terms: ${data.config.paymentModel === 'ONE_TIME' ? 'Full contract value due upfront at signing' : 'Setup fee due at signing, then monthly subscription for the contract term'}`,
+      `Payment Terms: ${data.config.paymentModel === 'ONE_TIME'
+        ? 'Full contract value due upfront at signing'
+        : `Setup${data.pricing.hardwareCost > 0 ? ', hardware,' : ''} fee due at signing, then monthly subscription for the contract term`}`,
       `Intellectual Property: ${data.config.solutionCoverage.includes('Source code ownership') ? 'Full source code ownership transferred to client' : 'Licensed for use during contract term'}`,
       'Termination: Either party may terminate with 30 days written notice',
       `Contract Duration: ${data.config.expectedLifetime} months`,

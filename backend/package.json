@@ -8,7 +8,8 @@
     "start": "node dist/index.js",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
-    "db:seed": "tsx src/scripts/seed.ts"
+    "db:seed": "tsx src/scripts/seed.ts",
+    "generate:user-guide": "tsx src/scripts/generateUserGuide.ts"
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.1068.0",

@@ -4,6 +4,8 @@ import {
   quotesRouter,
   exchangeRouter,
   problemTypesRouter,
+  pricingRouter,
+  solutionFeaturesRouter,
   errorHandler,
 } from './routes';
 import { adminRouter } from './routes/admin';
@@ -26,6 +28,8 @@ app.use('/api/auth', authRouter);
 app.use('/api/quotes', requireAuth, quotesRouter);
 app.use('/api/exchange-rates', requireAuth, exchangeRouter);
 app.use('/api/problem-types', requireAuth, problemTypesRouter);
+app.use('/api/pricing', requireAuth, pricingRouter);
+app.use('/api/solution-features', requireAuth, solutionFeaturesRouter);
 app.use('/api/admin', adminRouter);
 
 app.use(errorHandler);

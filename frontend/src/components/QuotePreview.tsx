@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2 } from 'lucide-react';
 import { SelectedPaymentDisplay } from '@/components/PaymentOptionsDisplay';
+import { HardwareBomSummary } from '@/components/HardwareBomTable';
 
 interface QuotePreviewProps {
   pricing: PricingBreakdown | null;
@@ -134,6 +135,12 @@ export const QuotePreview = memo(function QuotePreview({
               <span>Volume Processing</span>
               <span>{formatCurrency(pricing.volumeProcessingFee, currency)}/mo</span>
             </div>
+            {pricing.hardwareCost > 0 && pricing.hardwareBom.length > 0 && (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs font-medium">Hardware BOM</p>
+                <HardwareBomSummary bom={pricing.hardwareBom} currency={currency} />
+              </div>
+            )}
           </div>
         </div>
 

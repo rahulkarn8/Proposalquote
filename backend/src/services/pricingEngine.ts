@@ -9,7 +9,7 @@ import {
 import {
   getProblemTypeFactors,
   getHourlyRate,
-  getCoverageMultiplier,
+  getFeatureCoverageSum,
   getIntegrationMultiplier,
   getSupportMultiplier,
   getComplianceMultiplier,
@@ -17,12 +17,13 @@ import {
   getCloudMarkup,
   getTaxRate,
   getVolumeTier,
-  getSetupGlobalMultiplier,
   getMaintenanceFeePercent,
   getSupportPercentOfSetup,
   getPerTicketSupportBase,
 } from '../data/problemTypes';
+import { calculateSetupFee, resolveSetupPricingMode } from '../lib/setupPricing';
 import { formatSupportClause } from '../lib/labels';
+import { formatBomLineLabel, getEffectiveHardwareBom, sumHardwareBom } from '../lib/hardwareBom';
 
 const QUARTERLY_DISCOUNT = 0.05;
 const ANNUAL_DISCOUNT = 0.15;
@@ -33,17 +34,14 @@ export function calculatePricing(config: QuoteConfiguration): PricingBreakdown {
   const problemFactors = getProblemTypeFactors(config.problemType);
   const hourlyRate = getHourlyRate(config.complexity);
   const complexityMultiplier = problemFactors.baseComplexityFactors[config.complexity];
-  const coverageMultiplier = getCoverageMultiplier(config.solutionCoverage);
+  const setupPricingMode = resolveSetupPricingMode(config);
+  const { setupFee, effectiveEngineeringEffort, lineItems: setupLineItems } = calculateSetupFee(config, problemFactors);
+  const coverageMultiplier = setupPricingMode === 'FEATURE_WISE'
+    ? getFeatureCoverageSum(config.solutionCoverage)
+    : 1;
   const integrationMultiplier = getIntegrationMultiplier(config.integrationComplexity);
   const complianceMultiplier = getComplianceMultiplier(config.complianceRequirements);
   const volumeTier = getVolumeTier(config.volume);
-
-  const baseSetupFee = config.engineeringEffort * hourlyRate * complexityMultiplier;
-  const setupFee = baseSetupFee
-    * coverageMultiplier
-    * integrationMultiplier
-    * complianceMultiplier
-    * getSetupGlobalMultiplier();
 
   const cloudMarkup = getCloudMarkup();
   const cloudBase = config.estimatedMonthlyCloudCost * problemFactors.cloudCostMultiplier;
@@ -86,8 +84,10 @@ export function calculatePricing(config: QuoteConfiguration): PricingBreakdown {
   const annualFee = monthlyFee * 12 * (1 - ANNUAL_DISCOUNT);
 
   const contractMonths = config.expectedLifetime;
-  const year1Cost = setupFee + monthlyFee * Math.min(12, contractMonths);
-  const totalContractValue = setupFee + monthlyFee * contractMonths;
+  const hardwareBom = getEffectiveHardwareBom(config.includesHardware, config.hardwareBom, config as QuoteConfiguration & { hardwareDescription?: string; hardwareCost?: number });
+  const hardwareCost = sumHardwareBom(hardwareBom);
+  const year1Cost = setupFee + hardwareCost + monthlyFee * Math.min(12, contractMonths);
+  const totalContractValue = setupFee + hardwareCost + monthlyFee * contractMonths;
 
   const taxRate = getTaxRate();
   const taxAmount = totalContractValue * (taxRate / 100);
@@ -95,6 +95,7 @@ export function calculatePricing(config: QuoteConfiguration): PricingBreakdown {
 
   const paymentOptions = buildPaymentOptions({
     setupFee,
+    hardwareCost,
     monthlyFee,
     contractMonths,
     totalContractValue,
@@ -105,15 +106,7 @@ export function calculatePricing(config: QuoteConfiguration): PricingBreakdown {
   const paymentOption = paymentOptions[0];
 
   const lineItems: PricingLineItem[] = [
-    {
-      category: 'Setup & Engineering',
-      description: `${config.engineeringEffort}h engineering at $${hourlyRate}/hr (${config.complexity} complexity)`,
-      quantity: 1,
-      unitPrice: setupFee,
-      total: setupFee,
-      recurring: false,
-      billingPeriod: 'ONE_TIME',
-    },
+    ...setupLineItems,
     {
       category: 'Cloud Infrastructure',
       description: `${config.cloudProvider} hosting with ${(cloudMarkup * 100).toFixed(0)}% management markup`,
@@ -142,6 +135,21 @@ export function calculatePricing(config: QuoteConfiguration): PricingBreakdown {
       billingPeriod: 'MONTHLY',
     },
   ];
+
+  if (hardwareCost > 0) {
+    for (const row of hardwareBom) {
+      const lineTotal = row.quantity * row.unitPrice;
+      lineItems.push({
+        category: 'Hardware',
+        description: formatBomLineLabel(row),
+        quantity: row.quantity,
+        unitPrice: lineTotal / row.quantity,
+        total: lineTotal,
+        recurring: false,
+        billingPeriod: 'ONE_TIME',
+      });
+    }
+  }
 
   if (taxRate > 0) {
     lineItems.push({
@@ -174,6 +182,8 @@ export function calculatePricing(config: QuoteConfiguration): PricingBreakdown {
     complexityMultiplier,
     integrationMultiplier,
     coverageMultiplier,
+    setupPricingMode,
+    effectiveEngineeringEffort,
     volumeProcessingFee: round2(volumeProcessingFee),
     cloudCostMonthly: round2(cloudCostMonthly),
     supportCostMonthly: round2(supportCostMonthly),
@@ -182,6 +192,8 @@ export function calculatePricing(config: QuoteConfiguration): PricingBreakdown {
     volumeDiscount: volumeTier.discount,
     volumeTierLabel: volumeTier.label,
     requiresCustomPricing: volumeTier.requiresCustomPricing,
+    hardwareCost: round2(hardwareCost),
+    hardwareBom,
   };
 }
 
@@ -214,6 +226,11 @@ export function applyCurrencyToPricing(
     cloudCostMonthly: convert(pricing.cloudCostMonthly),
     supportCostMonthly: convert(pricing.supportCostMonthly),
     maintenanceFeeMonthly: convert(pricing.maintenanceFeeMonthly),
+    hardwareCost: convert(pricing.hardwareCost),
+    hardwareBom: pricing.hardwareBom.map((row) => ({
+      ...row,
+      unitPrice: convert(row.unitPrice),
+    })),
     paymentOption: {
       ...pricing.paymentOption,
       upfrontPayment: convert(pricing.paymentOption.upfrontPayment),
@@ -244,6 +261,7 @@ function round2(n: number): number {
 
 function buildPaymentOptions(params: {
   setupFee: number;
+  hardwareCost: number;
   monthlyFee: number;
   contractMonths: number;
   totalContractValue: number;
@@ -253,6 +271,7 @@ function buildPaymentOptions(params: {
 }): QuotePaymentOption[] {
   const {
     setupFee,
+    hardwareCost,
     monthlyFee,
     contractMonths,
     totalContractValue,
@@ -261,11 +280,14 @@ function buildPaymentOptions(params: {
     paymentModel,
   } = params;
 
+  const upfrontAtSigning = round2(setupFee + hardwareCost);
+  const hardwareNote = hardwareCost > 0 ? ' Includes one-time hardware costs.' : '';
+
   const allOptions: QuotePaymentOption[] = [
     {
       type: 'ONE_TIME',
       label: 'One-Time Payment',
-      description: 'Pay the full contract value in a single upfront payment. No recurring invoices.',
+      description: `Pay the full contract value in a single upfront payment. No recurring invoices.${hardwareNote}`,
       upfrontPayment: round2(totalContractValue),
       recurringPayment: 0,
       recurringPeriod: null,
@@ -277,8 +299,8 @@ function buildPaymentOptions(params: {
     {
       type: 'MONTHLY_SUBSCRIPTION',
       label: 'Monthly Subscription',
-      description: `Pay setup fee upfront, then a fixed monthly subscription for ${contractMonths} months.`,
-      upfrontPayment: round2(setupFee),
+      description: `Pay setup${hardwareCost > 0 ? ', hardware,' : ''} fee upfront, then a fixed monthly subscription for ${contractMonths} months.${hardwareNote}`,
+      upfrontPayment: upfrontAtSigning,
       recurringPayment: round2(monthlyFee),
       recurringPeriod: 'MONTHLY',
       recurringMonths: contractMonths,
@@ -305,7 +327,10 @@ export function getValidUntilDate(days = 30): Date {
 }
 
 export function getTimelineWeeks(config: QuoteConfiguration): { setup: number; rampUp: number; steadyState: number } {
-  const setup = Math.ceil(config.engineeringEffort / 40);
+  const effort = resolveSetupPricingMode(config) === 'FEATURE_WISE'
+    ? calculateSetupFee(config, getProblemTypeFactors(config.problemType)).effectiveEngineeringEffort
+    : config.engineeringEffort;
+  const setup = Math.ceil(effort / 40);
   const rampUp = Math.ceil(config.volume / 1000) + 2;
   const steadyState = config.expectedLifetime;
   return { setup, rampUp, steadyState };
@@ -333,10 +358,12 @@ export function getTechnicalApproach(config: QuoteConfiguration): string[] {
   );
 
   const coverageList = config.solutionCoverage.join(', ');
+  const pricingModeNote = resolveSetupPricingMode(config) === 'FEATURE_WISE'
+    ? `Setup is priced feature-by-feature across ${coverageList}.`
+    : `The engineering team will dedicate ${config.engineeringEffort} hours at ${config.complexity.toLowerCase().replace('_', ' ')} complexity.`;
   paragraphs.push(
-    `Our delivery scope includes ${coverageList}. The engineering team will dedicate ` +
-    `${config.engineeringEffort} hours at ${config.complexity.toLowerCase().replace('_', ' ')} complexity, ` +
-    `with ${config.integrationComplexity.toLowerCase()} integration into your existing environment. ` +
+    `Our delivery scope includes ${coverageList}. ${pricingModeNote} ` +
+    `Integration complexity is ${config.integrationComplexity.toLowerCase()} into your existing environment. ` +
     `${config.requiredLanguagesFrameworks ? `Recommended technology stack: ${config.requiredLanguagesFrameworks}.` : ''}`
   );
 
@@ -352,6 +379,7 @@ export function getTechnicalApproach(config: QuoteConfiguration): string[] {
 }
 
 export function getScopeDeliverables(config: QuoteConfiguration): string[] {
+  const hardwareBom = getEffectiveHardwareBom(config.includesHardware, config.hardwareBom, config as QuoteConfiguration & { hardwareDescription?: string; hardwareCost?: number });
   const deliverables = [
     ...config.solutionCoverage.map((item) => `Delivery of ${item}`),
     `Integration with existing systems (${config.integrationComplexity.toLowerCase()} complexity)`,
@@ -360,6 +388,9 @@ export function getScopeDeliverables(config: QuoteConfiguration): string[] {
   ];
   if (config.requiredLanguagesFrameworks) {
     deliverables.push(`Implementation using ${config.requiredLanguagesFrameworks}`);
+  }
+  if (config.includesHardware && hardwareBom.length > 0) {
+    deliverables.push(`Hardware supply & installation (${hardwareBom.length} BOM line${hardwareBom.length > 1 ? 's' : ''})`);
   }
   return deliverables;
 }

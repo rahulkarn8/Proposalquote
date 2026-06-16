@@ -20,7 +20,16 @@ export type ComplianceRequirement = 'GDPR' | 'HIPAA' | 'SOC2' | 'NONE';
 
 export type IntegrationComplexity = 'LOW' | 'MEDIUM' | 'HIGH';
 
+export type SetupPricingMode = 'ENGINEERING_EFFORT' | 'FEATURE_WISE';
+
 export type PaymentModel = 'ONE_TIME' | 'MONTHLY_SUBSCRIPTION';
+
+export interface HardwareBomLine {
+  item: string;
+  partNumber?: string;
+  quantity: number;
+  unitPrice: number;
+}
 
 export type VolumeUnit = string;
 
@@ -37,6 +46,20 @@ export const SOLUTION_COVERAGE_OPTIONS = [
   'Source code ownership',
 ] as const;
 
+export interface SolutionFeature {
+  label: string;
+  category: string;
+  description: string;
+  multiplier: number;
+  recommended?: boolean;
+}
+
+export interface SolutionFeatureCatalogResponse {
+  features: SolutionFeature[];
+  categories: string[];
+  recommended: SolutionFeature[];
+}
+
 export type SolutionCoverage = (typeof SOLUTION_COVERAGE_OPTIONS)[number] | string;
 
 export interface QuoteConfiguration {
@@ -47,6 +70,7 @@ export interface QuoteConfiguration {
   volumeUnit: VolumeUnit;
   complexity: Complexity;
   engineeringEffort: number;
+  setupPricingMode: SetupPricingMode;
   currency: Currency;
   startDate: string;
   solutionCoverage: SolutionCoverage[];
@@ -64,6 +88,8 @@ export interface QuoteConfiguration {
   integrationComplexity: IntegrationComplexity;
   expectedLifetime: number;
   paymentModel: PaymentModel;
+  includesHardware: boolean;
+  hardwareBom: HardwareBomLine[];
 }
 
 export interface PricingLineItem {
@@ -108,6 +134,8 @@ export interface PricingBreakdown {
   complexityMultiplier: number;
   integrationMultiplier: number;
   coverageMultiplier: number;
+  setupPricingMode: SetupPricingMode;
+  effectiveEngineeringEffort: number;
   volumeProcessingFee: number;
   cloudCostMonthly: number;
   supportCostMonthly: number;
@@ -116,6 +144,8 @@ export interface PricingBreakdown {
   volumeDiscount: number;
   volumeTierLabel: string;
   requiresCustomPricing: boolean;
+  hardwareCost: number;
+  hardwareBom: HardwareBomLine[];
 }
 
 export interface ProblemTypeFactors {

@@ -4,9 +4,12 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { HardwareBomTable } from '@/components/HardwareBomTable';
 import type { CloudProvider, CloudCostModel, PaymentModel } from '@/types';
-import { CreditCard, CalendarClock } from 'lucide-react';
+import { CreditCard, CalendarClock, HardDrive } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { createEmptyBomLine } from '@/lib/hardwareBom';
 
 interface StepCloudProps {
   form: UseFormReturn<QuoteFormValues>;
@@ -34,6 +37,19 @@ const PAYMENT_MODELS: {
 
 export function StepCloud({ form }: StepCloudProps) {
   const paymentModel = form.watch('paymentModel');
+  const includesHardware = form.watch('includesHardware');
+  const hardwareBom = form.watch('hardwareBom') ?? [];
+  const currency = form.watch('currency');
+
+  const toggleHardware = (checked: boolean) => {
+    form.setValue('includesHardware', checked, { shouldValidate: true });
+    if (checked && hardwareBom.length === 0) {
+      form.setValue('hardwareBom', [createEmptyBomLine()], { shouldValidate: true });
+    }
+    if (!checked) {
+      form.setValue('hardwareBom', [], { shouldValidate: true });
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -115,6 +131,36 @@ export function StepCloud({ form }: StepCloudProps) {
             <p className="text-xs text-[var(--color-destructive)]">{form.formState.errors.expectedLifetime.message}</p>
           )}
         </div>
+      </div>
+
+      <div className="space-y-4 rounded-lg border border-[var(--color-border)] p-4">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <Checkbox
+            checked={includesHardware}
+            onCheckedChange={(v) => toggleHardware(v === true)}
+            className="mt-0.5"
+          />
+          <div>
+            <span className="font-medium flex items-center gap-2">
+              <HardDrive className="w-4 h-4 text-[var(--color-primary)]" />
+              Solution includes hardware
+            </span>
+            <p className="text-sm text-[var(--color-muted-foreground)] mt-1">
+              Build a bill of materials for servers, GPUs, cameras, sensors, PLCs, and other physical components
+            </p>
+          </div>
+        </label>
+
+        {includesHardware && (
+          <div className="pt-2 border-t border-[var(--color-border)]">
+            <HardwareBomTable
+              value={hardwareBom}
+              currency={currency}
+              onChange={(bom) => form.setValue('hardwareBom', bom, { shouldValidate: true })}
+              error={form.formState.errors.hardwareBom?.message as string | undefined}
+            />
+          </div>
+        )}
       </div>
 
       {form.watch('cloudProvider') !== 'NONE' && (

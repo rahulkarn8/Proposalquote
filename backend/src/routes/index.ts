@@ -12,6 +12,12 @@ import { saveQuote, getQuoteById, listQuotes } from '../services/quoteService';
 import { generateProposalPdf, getPdfPath } from '../services/pdfGenerator';
 import { getProblemTypeFactors, getAllProblemTypes } from '../data/problemTypes';
 import { VOLUME_UNITS } from '../config/problemTypeCatalog';
+import {
+  ALL_SOLUTION_FEATURES,
+  getCategoryOrder,
+  getRecommendedFeatures,
+} from '../config/solutionFeatureCatalog';
+import { getAdminSettings } from '../services/adminConfig';
 import { ProblemType } from '../types';
 
 function param(req: Request, name: string): string {
@@ -179,6 +185,61 @@ problemTypesRouter.get('/:type/factors', (req: Request, res: Response) => {
     res.json(factors);
   } catch {
     res.status(404).json({ error: `Problem type '${req.params.type}' not found` });
+  }
+});
+
+export const pricingRouter = Router();
+
+pricingRouter.get('/rates', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { loadAdminSettings } = await import('../services/adminConfig');
+    await loadAdminSettings();
+    const settings = getAdminSettings();
+    res.json({
+      hourlyRates: settings.hourlyRates,
+      volumeTiers: settings.volumeTiers,
+      coverageMultipliers: settings.coverageMultipliers,
+      defaultCoverageMultiplier: settings.setupFeeConfig.defaultCoverageMultiplier,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+export const solutionFeaturesRouter = Router();
+
+solutionFeaturesRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { loadAdminSettings } = await import('../services/adminConfig');
+    await loadAdminSettings();
+    const settings = getAdminSettings();
+    const problemType = typeof req.query.problemType === 'string' ? req.query.problemType : '';
+
+    const features = ALL_SOLUTION_FEATURES.map((f) => ({
+      label: f.label,
+      category: f.category,
+      description: f.description,
+      multiplier: settings.coverageMultipliers[f.label] ?? f.defaultMultiplier,
+      recommended: problemType ? (f.problemTypes?.includes(problemType) ?? false) : false,
+    }));
+
+    const recommended = problemType
+      ? getRecommendedFeatures(problemType).map((f) => ({
+          label: f.label,
+          category: f.category,
+          description: f.description,
+          multiplier: settings.coverageMultipliers[f.label] ?? f.defaultMultiplier,
+          recommended: true,
+        }))
+      : [];
+
+    res.json({
+      features,
+      categories: getCategoryOrder(),
+      recommended,
+    });
+  } catch (error) {
+    next(error);
   }
 });
 

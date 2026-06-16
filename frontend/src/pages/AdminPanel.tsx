@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { AppHeader } from '@/components/AppHeader';
 import {
   getAdminSettings, saveAdminSettings, getAnalytics,
   addProblemType, deleteProblemType, seedSampleData, resetAdminSettings,
+  getSolutionFeatures,
 } from '@/lib/api';
-import type { AdminSettings, QuoteAnalytics, Complexity } from '@/types';
-import { SOLUTION_COVERAGE_OPTIONS } from '@/types';
+import type { AdminSettings, QuoteAnalytics, Complexity, SolutionFeature } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,13 +22,27 @@ import {
 
 type Tab = 'setup-fee' | 'coverage' | 'support' | 'problem-types' | 'general' | 'analytics';
 
+const UNLIMITED_VOLUME = 999_999_999;
+
 export function AdminPanel() {
+  const messageRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<Tab>('analytics');
   const [settings, setSettings] = useState<AdminSettings | null>(null);
+  const [featureCatalog, setFeatureCatalog] = useState<SolutionFeature[]>([]);
+  const [featureCategories, setFeatureCategories] = useState<string[]>([]);
   const [analytics, setAnalytics] = useState<QuoteAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageIsError, setMessageIsError] = useState(false);
+
+  const showMessage = (text: string, isError = false) => {
+    setMessage(text);
+    setMessageIsError(isError);
+    requestAnimationFrame(() => {
+      messageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  };
 
   const [newType, setNewType] = useState({
     type: '', label: '', description: '', volumeUnit: 'documents/month', perUnitProcessingRate: 0.05,
@@ -41,11 +55,17 @@ export function AdminPanel() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [s, a] = await Promise.all([getAdminSettings(), getAnalytics()]);
+      const [s, a, features] = await Promise.all([
+        getAdminSettings(),
+        getAnalytics(),
+        getSolutionFeatures(),
+      ]);
       setSettings(s);
       setAnalytics(a);
+      setFeatureCatalog(features.features);
+      setFeatureCategories(features.categories);
     } catch (err) {
-      setMessage(`Error loading: ${err instanceof Error ? err.message : 'Unknown'}`);
+      showMessage(`Error loading: ${err instanceof Error ? err.message : 'Unknown'}`, true);
     } finally {
       setLoading(false);
     }
@@ -56,11 +76,24 @@ export function AdminPanel() {
     setSaving(true);
     setMessage(null);
     try {
-      const saved = await saveAdminSettings(settings);
+      const payload: AdminSettings = {
+        ...settings,
+        volumeTiers: settings.volumeTiers.map((tier) => ({
+          ...tier,
+          maxVolume:
+            tier.maxVolume == null ||
+            tier.maxVolume === Infinity ||
+            !Number.isFinite(tier.maxVolume) ||
+            tier.requiresCustomPricing
+              ? UNLIMITED_VOLUME
+              : tier.maxVolume,
+        })),
+      };
+      const saved = await saveAdminSettings(payload);
       setSettings(saved);
-      setMessage('Settings saved successfully');
+      showMessage('Settings saved successfully');
     } catch (err) {
-      setMessage(`Save failed: ${err instanceof Error ? err.message : 'Unknown'}`);
+      showMessage(`Save failed: ${err instanceof Error ? err.message : 'Unknown'}`, true);
     } finally {
       setSaving(false);
     }
@@ -218,7 +251,16 @@ export function AdminPanel() {
         </div>
 
         {message && (
-          <div className="mb-4 p-3 rounded-md bg-[var(--color-muted)] text-sm">{message}</div>
+          <div
+            ref={messageRef}
+            className={`mb-4 p-3 rounded-md text-sm border ${
+              messageIsError
+                ? 'bg-red-50 border-red-200 text-red-800'
+                : 'bg-green-50 border-green-200 text-green-800'
+            }`}
+          >
+            {message}
+          </div>
         )}
 
         {tab === 'analytics' && analytics && (
@@ -475,29 +517,47 @@ export function AdminPanel() {
         {tab === 'coverage' && settings && (
           <Card>
             <CardHeader>
-              <CardTitle>Solution Coverage Multipliers</CardTitle>
-              <CardDescription>Each selected item adds this percentage to setup fee</CardDescription>
+              <CardTitle>Solution Feature Weights</CardTitle>
+              <CardDescription>
+                Feature weight used in feature-wise setup pricing ({featureCatalog.length} predefined AI features)
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {SOLUTION_COVERAGE_OPTIONS.map((option) => (
-                <div key={option} className="flex items-center gap-4">
-                  <span className="text-sm flex-1">{option}</span>
-                  <Input
-                    type="number"
-                    className="w-24"
-                    step={0.01}
-                    min={0}
-                    max={1}
-                    value={settings.coverageMultipliers[option] ?? 0.05}
-                    onChange={(e) => updateCoverageMultiplier(option, Number(e.target.value))}
-                  />
-                  <span className="text-xs text-[var(--color-muted-foreground)] w-12">
-                    {((settings.coverageMultipliers[option] ?? 0.05) * 100).toFixed(0)}%
-                  </span>
-                </div>
-              ))}
+            <CardContent className="space-y-6">
+              {featureCategories.map((category) => {
+                const items = featureCatalog.filter((f) => f.category === category);
+                if (items.length === 0) return null;
+                return (
+                  <div key={category} className="space-y-2">
+                    <Label className="text-base">{category}</Label>
+                    <div className="space-y-2">
+                      {items.map((feature) => (
+                        <div key={feature.label} className="flex items-start gap-4 p-2 rounded border border-[var(--color-border)]">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium">{feature.label}</p>
+                            {feature.description && (
+                              <p className="text-xs text-[var(--color-muted-foreground)]">{feature.description}</p>
+                            )}
+                          </div>
+                          <Input
+                            type="number"
+                            className="w-24 shrink-0"
+                            step={0.01}
+                            min={0}
+                            max={1}
+                            value={settings.coverageMultipliers[feature.label] ?? feature.multiplier}
+                            onChange={(e) => updateCoverageMultiplier(feature.label, Number(e.target.value))}
+                          />
+                          <span className="text-xs text-[var(--color-muted-foreground)] w-12 shrink-0 pt-2">
+                            {(((settings.coverageMultipliers[feature.label] ?? feature.multiplier) * 100)).toFixed(0)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
               {Object.entries(settings.coverageMultipliers)
-                .filter(([k]) => !SOLUTION_COVERAGE_OPTIONS.includes(k as typeof SOLUTION_COVERAGE_OPTIONS[number]))
+                .filter(([k]) => !featureCatalog.some((f) => f.label === k))
                 .map(([key, val]) => (
                   <div key={key} className="flex items-center gap-4">
                     <span className="text-sm flex-1 italic">{key}</span>
@@ -645,7 +705,7 @@ export function AdminPanel() {
                   {settings.volumeTiers.map((tier, i) => (
                     <div key={i} className="flex items-center gap-4 p-2 border rounded">
                       <span className="flex-1">{tier.label}</span>
-                      <span>Up to {tier.maxVolume === Infinity ? '∞' : tier.maxVolume.toLocaleString()}</span>
+                      <span>Up to {tier.requiresCustomPricing || tier.maxVolume >= UNLIMITED_VOLUME ? '∞' : tier.maxVolume.toLocaleString()}</span>
                       <span>{(tier.discount * 100).toFixed(0)}% off</span>
                       {tier.requiresCustomPricing && (
                         <Badge variant="outline" className="text-amber-600">
@@ -664,8 +724,8 @@ export function AdminPanel() {
         )}
 
         {tab !== 'analytics' && (
-          <div className="mt-6 flex justify-end">
-            <Button onClick={handleSave} disabled={saving}>
+          <div className="mt-6 sticky bottom-4 flex justify-end">
+            <Button onClick={handleSave} disabled={saving || !settings} size="lg">
               <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Settings'}
             </Button>
           </div>

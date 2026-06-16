@@ -1,5 +1,23 @@
 import { z } from 'zod';
 
+const hardwareBomLineSchema = z.object({
+  item: z.string().min(1, 'Item description is required'),
+  partNumber: z.string().optional(),
+  quantity: z.coerce.number().min(1, 'Quantity must be at least 1'),
+  unitPrice: z.coerce.number().min(0, 'Unit price must be 0 or greater'),
+});
+
+const hardwareBomRefine = (data: { includesHardware: boolean; hardwareBom: z.infer<typeof hardwareBomLineSchema>[] }) => {
+  if (!data.includesHardware) return true;
+  return data.hardwareBom.length > 0 && data.hardwareBom.every((line) => line.item.trim().length > 0);
+};
+
+const hardwareBomTotalRefine = (data: { includesHardware: boolean; hardwareBom: z.infer<typeof hardwareBomLineSchema>[] }) => {
+  if (!data.includesHardware) return true;
+  const total = data.hardwareBom.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
+  return total > 0;
+};
+
 const warrantyRefine = (data: { warrantyPeriod: number; warrantyUnit: string }) => {
   const months = data.warrantyUnit === 'months' ? data.warrantyPeriod : data.warrantyPeriod / 30;
   return months >= 0 && months <= 60;
@@ -12,7 +30,8 @@ const quoteConfigurationBase = z.object({
   volume: z.coerce.number().min(1, 'Minimum volume is 1').max(10_000_000, 'Maximum volume is 10,000,000'),
   volumeUnit: z.string().min(1, 'Volume unit is required'),
   complexity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'VERY_HIGH']),
-  engineeringEffort: z.coerce.number().min(8, 'Minimum 8 hours').max(2000, 'Maximum 2000 hours'),
+  engineeringEffort: z.coerce.number().min(0).max(2000, 'Maximum 2000 hours'),
+  setupPricingMode: z.enum(['ENGINEERING_EFFORT', 'FEATURE_WISE']).default('ENGINEERING_EFFORT'),
   currency: z.enum(['USD', 'EUR', 'GBP', 'INR']),
   startDate: z.string().min(1, 'Start date is required'),
   solutionCoverage: z.array(z.string()).min(1, 'Select at least one solution coverage option'),
@@ -30,19 +49,51 @@ const quoteConfigurationBase = z.object({
   integrationComplexity: z.enum(['LOW', 'MEDIUM', 'HIGH']),
   expectedLifetime: z.coerce.number().min(1).max(60),
   paymentModel: z.enum(['ONE_TIME', 'MONTHLY_SUBSCRIPTION']),
+  includesHardware: z.boolean(),
+  hardwareBom: z.array(hardwareBomLineSchema),
 });
 
-export const quoteConfigurationSchema = quoteConfigurationBase.refine(warrantyRefine, {
-  message: 'Warranty period must be between 0 and 60 months',
-  path: ['warrantyPeriod'],
-});
+const engineeringEffortRefine = (data: { setupPricingMode: string; engineeringEffort: number }) =>
+  data.setupPricingMode === 'FEATURE_WISE' || (data.engineeringEffort >= 8 && data.engineeringEffort <= 2000);
 
-export const createQuoteSchema = quoteConfigurationBase.extend({
-  status: z.enum(['DRAFT', 'FINAL']).optional().default('DRAFT'),
-}).refine(warrantyRefine, {
-  message: 'Warranty period must be between 0 and 60 months',
-  path: ['warrantyPeriod'],
-});
+export const quoteConfigurationSchema = quoteConfigurationBase
+  .refine(warrantyRefine, {
+    message: 'Warranty period must be between 0 and 60 months',
+    path: ['warrantyPeriod'],
+  })
+  .refine(hardwareBomRefine, {
+    message: 'Add at least one complete BOM line (item, quantity, unit price)',
+    path: ['hardwareBom'],
+  })
+  .refine(hardwareBomTotalRefine, {
+    message: 'Hardware BOM total must be greater than zero',
+    path: ['hardwareBom'],
+  })
+  .refine(engineeringEffortRefine, {
+    message: 'Engineering effort must be between 8 and 2000 hours',
+    path: ['engineeringEffort'],
+  });
+
+export const createQuoteSchema = quoteConfigurationBase
+  .extend({
+    status: z.enum(['DRAFT', 'FINAL']).optional().default('DRAFT'),
+  })
+  .refine(warrantyRefine, {
+    message: 'Warranty period must be between 0 and 60 months',
+    path: ['warrantyPeriod'],
+  })
+  .refine(hardwareBomRefine, {
+    message: 'Add at least one complete BOM line (item, quantity, unit price)',
+    path: ['hardwareBom'],
+  })
+  .refine(hardwareBomTotalRefine, {
+    message: 'Hardware BOM total must be greater than zero',
+    path: ['hardwareBom'],
+  })
+  .refine(engineeringEffortRefine, {
+    message: 'Engineering effort must be between 8 and 2000 hours',
+    path: ['engineeringEffort'],
+  });
 
 export const calculateQuoteSchema = quoteConfigurationSchema;
 

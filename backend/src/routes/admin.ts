@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import { adminSettingsSchema, newProblemTypeSchema } from '../validation/schemas';
-import { loadAdminSettings, saveAdminSettings } from '../services/adminConfig';
+import { loadAdminSettings, saveAdminSettings, normalizeAdminSettings } from '../services/adminConfig';
 import { getQuoteAnalytics } from '../services/analyticsService';
 import { seedSampleQuotes } from '../services/seedService';
 import { AdminSettings, ProblemTypeFactors } from '../types';
@@ -23,7 +23,7 @@ adminRouter.get('/settings', async (_req: Request, res: Response, next: NextFunc
 
 adminRouter.put('/settings', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const settings = adminSettingsSchema.parse(req.body) as AdminSettings;
+    const settings = adminSettingsSchema.parse(normalizeAdminSettings(req.body)) as AdminSettings;
     const saved = await saveAdminSettings(settings);
     res.json(saved);
   } catch (error) {

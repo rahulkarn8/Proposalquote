@@ -1,5 +1,9 @@
 import { AdminSettings } from '../types';
 import { ALL_DEFAULT_PROBLEM_TYPES } from './problemTypeCatalog';
+import { getDefaultCoverageMultipliers } from './solutionFeatureCatalog';
+
+/** JSON cannot represent Infinity; use this sentinel for the unlimited volume tier. */
+export const UNLIMITED_VOLUME = 999_999_999;
 
 export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   hourlyRates: {
@@ -8,16 +12,7 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
     HIGH: 150,
     VERY_HIGH: 250,
   },
-  coverageMultipliers: {
-    'Data preprocessing & cleaning': 0.08,
-    'Model training & fine-tuning': 0.15,
-    'API endpoint deployment': 0.10,
-    'Web dashboard for monitoring': 0.12,
-    'Integration with existing systems': 0.14,
-    'Custom UI/UX': 0.10,
-    'Documentation & training': 0.06,
-    'Source code ownership': 0.20,
-  },
+  coverageMultipliers: getDefaultCoverageMultipliers(),
   setupFeeConfig: {
     globalMultiplier: 1.0,
     integrationMultipliers: { LOW: 1.0, MEDIUM: 1.5, HIGH: 2.5 },
@@ -41,6 +36,6 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
     { maxVolume: 1000, discount: 0, label: 'Base' },
     { maxVolume: 10000, discount: 0.10, label: '10% discount' },
     { maxVolume: 100000, discount: 0.20, label: '20% discount' },
-    { maxVolume: Infinity, discount: 0, label: 'Custom pricing', requiresCustomPricing: true },
+    { maxVolume: UNLIMITED_VOLUME, discount: 0, label: 'Custom pricing', requiresCustomPricing: true },
   ],
 };

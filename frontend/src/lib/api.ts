@@ -127,6 +127,20 @@ export async function getVolumeUnits(): Promise<string[]> {
   return request('/problem-types/volume-units');
 }
 
+export async function getPricingRates(): Promise<{
+  hourlyRates: Record<import('@/types').Complexity, number>;
+  volumeTiers: { maxVolume: number; discount: number; label: string; requiresCustomPricing?: boolean }[];
+  coverageMultipliers: Record<string, number>;
+  defaultCoverageMultiplier: number;
+}> {
+  return request('/pricing/rates');
+}
+
+export async function getSolutionFeatures(problemType?: string): Promise<import('@/types').SolutionFeatureCatalogResponse> {
+  const query = problemType ? `?problemType=${encodeURIComponent(problemType)}` : '';
+  return request(`/solution-features${query}`);
+}
+
 export async function getProblemTypeFactors(type: string): Promise<ProblemTypeFactors> {
   const slug = type.toLowerCase().replace(/_/g, '-');
   return request(`/problem-types/${slug}/factors`);

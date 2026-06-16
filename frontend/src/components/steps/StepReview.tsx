@@ -5,7 +5,9 @@ import type { PricingBreakdown } from '@/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SelectedPaymentDisplay } from '@/components/PaymentOptionsDisplay';
+import { HardwareBomSummary } from '@/components/HardwareBomTable';
 import { SupportClauseSummary } from '@/components/SupportClauseSummary';
+import { sumHardwareBom } from '@/lib/hardwareBom';
 import {
   COVERAGE_TYPE_LABELS,
   SUPPORT_COST_MODEL_LABELS,
@@ -13,6 +15,7 @@ import {
   SUPPORT_SLA_LABELS,
   formatWarrantyClause,
 } from '@/lib/labels';
+import { SETUP_PRICING_MODE_LABELS } from '@/types';
 
 interface StepReviewProps {
   form: UseFormReturn<QuoteFormValues>;
@@ -54,7 +57,8 @@ export function StepReview({ form, pricing, problemTypeLabel }: StepReviewProps)
             <div className="flex justify-between"><span className="text-[var(--color-muted-foreground)]">Type</span><span>{problemTypeLabel ?? values.problemType}</span></div>
             <div className="flex justify-between"><span className="text-[var(--color-muted-foreground)]">Complexity</span><Badge variant="outline">{values.complexity}</Badge></div>
             <div className="flex justify-between"><span className="text-[var(--color-muted-foreground)]">Volume</span><span>{values.volume.toLocaleString()} {values.volumeUnit}</span></div>
-            <div className="flex justify-between"><span className="text-[var(--color-muted-foreground)]">Engineering</span><span>{values.engineeringEffort}h</span></div>
+            <div className="flex justify-between"><span className="text-[var(--color-muted-foreground)]">Setup Pricing</span><span>{SETUP_PRICING_MODE_LABELS[values.setupPricingMode]}</span></div>
+            <div className="flex justify-between"><span className="text-[var(--color-muted-foreground)]">Engineering</span><span>{pricing?.effectiveEngineeringEffort ?? values.engineeringEffort}h</span></div>
             <div className="flex justify-between"><span className="text-[var(--color-muted-foreground)]">Start Date</span><span>{values.startDate}</span></div>
           </CardContent>
         </Card>
@@ -94,9 +98,24 @@ export function StepReview({ form, pricing, problemTypeLabel }: StepReviewProps)
             <div className="flex justify-between"><span className="text-[var(--color-muted-foreground)]">Contract</span><span>{values.expectedLifetime} months</span></div>
             <div className="flex justify-between"><span className="text-[var(--color-muted-foreground)]">Integration</span><span>{values.integrationComplexity}</span></div>
             <div className="flex justify-between"><span className="text-[var(--color-muted-foreground)]">Payment Model</span><span>{values.paymentModel === 'ONE_TIME' ? 'One-Time Payment' : 'Monthly Subscription'}</span></div>
+            {values.includesHardware && values.hardwareBom.length > 0 && (
+              <div className="flex justify-between">
+                <span className="text-[var(--color-muted-foreground)]">Hardware BOM</span>
+                <span>{formatCurrency(sumHardwareBom(values.hardwareBom), currency)}</span>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
+
+      {values.includesHardware && values.hardwareBom.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Hardware Bill of Materials</CardTitle></CardHeader>
+          <CardContent>
+            <HardwareBomSummary bom={values.hardwareBom} currency={currency} />
+          </CardContent>
+        </Card>
+      )}
 
       <SupportClauseSummary values={values} title="Support Clause (as it appears in the proposal)" />
 
@@ -133,8 +152,8 @@ export function StepReview({ form, pricing, problemTypeLabel }: StepReviewProps)
                     </tr>
                   </thead>
                   <tbody>
-                    {pricing.lineItems.map((item) => (
-                      <tr key={item.category} className="border-b border-[var(--color-border)]">
+                    {pricing.lineItems.map((item, index) => (
+                      <tr key={`${item.category}-${index}`} className="border-b border-[var(--color-border)]">
                         <td className="py-2">{item.category}</td>
                         <td className="py-2">{item.recurring ? 'Monthly' : 'One-time'}</td>
                         <td className="text-right py-2">{item.quantity}</td>

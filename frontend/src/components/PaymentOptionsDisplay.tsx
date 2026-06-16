@@ -61,7 +61,7 @@ export function SelectedPaymentDisplay({ option, currency, compact = false }: Se
         ) : (
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <p className="text-xs text-[var(--color-muted-foreground)]">Setup (upfront)</p>
+              <p className="text-xs text-[var(--color-muted-foreground)]">Upfront at signing</p>
               <p className="text-lg font-bold">{formatCurrency(option.upfrontPayment, currency)}</p>
             </div>
             <div>

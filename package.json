@@ -9,7 +9,8 @@
     "build": "npm run build --workspace=backend && npm run build --workspace=frontend",
     "db:push": "npm run db:push --workspace=backend",
     "db:generate": "npm run db:generate --workspace=backend",
-    "db:seed": "npm run db:seed --workspace=backend"
+    "db:seed": "npm run db:seed --workspace=backend",
+    "generate:user-guide": "npm run generate:user-guide --workspace=backend"
   },
   "workspaces": [
     "backend",

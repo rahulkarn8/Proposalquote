@@ -3,9 +3,11 @@ import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { quoteFormSchema, QuoteFormValues } from '@/lib/schema';
 import { DEFAULT_CONFIG } from '@/types';
-import { saveQuote, generatePdf, downloadQuotePdf, getProblemTypes } from '@/lib/api';
+import { saveQuote, generatePdf, downloadQuotePdf, getProblemTypes, getPricingRates, getSolutionFeatures } from '@/lib/api';
+import type { PricingRates } from '@/lib/pricingRates';
 import { toQuoteConfiguration, normalizeLoadedConfig } from '@/lib/quoteConfig';
-import type { ProblemTypeFactors, QuoteConfiguration } from '@/types';
+import type { ProblemTypeFactors, QuoteConfiguration, SolutionFeature } from '@/types';
+import { syncFeatureWiseEffort } from '@/lib/setupPricing';
 import { useDebouncedPricing } from '@/hooks/useDebouncedPricing';
 import { StepIndicator, STEPS } from '@/components/StepIndicator';
 import { QuotePreview } from '@/components/QuotePreview';
@@ -25,6 +27,10 @@ import { ChevronLeft, ChevronRight, Save, FileDown, Mail, Plus, Pencil } from 'l
 export function QuoteWizard() {
   const [step, setStep] = useState(0);
   const [problemTypes, setProblemTypes] = useState<ProblemTypeFactors[]>([]);
+  const [pricingRates, setPricingRates] = useState<PricingRates | null>(null);
+  const [solutionFeatures, setSolutionFeatures] = useState<SolutionFeature[]>([]);
+  const [featureCategories, setFeatureCategories] = useState<string[]>([]);
+  const [recommendedFeatures, setRecommendedFeatures] = useState<SolutionFeature[]>([]);
   const [savedQuoteId, setSavedQuoteId] = useState<string | null>(null);
   const [savedQuoteNumber, setSavedQuoteNumber] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -46,6 +52,9 @@ export function QuoteWizard() {
   const currency = useWatch({ control: form.control, name: 'currency' });
   const expectedLifetime = useWatch({ control: form.control, name: 'expectedLifetime' });
   const problemType = useWatch({ control: form.control, name: 'problemType' });
+  const setupPricingMode = useWatch({ control: form.control, name: 'setupPricingMode' });
+  const solutionCoverage = useWatch({ control: form.control, name: 'solutionCoverage' });
+  const complexity = useWatch({ control: form.control, name: 'complexity' });
   const clientName = useWatch({ control: form.control, name: 'clientName' });
 
   const problemTypeLabel = useMemo(
@@ -54,8 +63,34 @@ export function QuoteWizard() {
   );
 
   useEffect(() => {
-    getProblemTypes().then(setProblemTypes).catch(console.error);
+    Promise.all([getProblemTypes(), getPricingRates()])
+      .then(([types, rates]) => {
+        setProblemTypes(types);
+        setPricingRates(rates);
+      })
+      .catch(console.error);
   }, []);
+
+  useEffect(() => {
+    getSolutionFeatures(problemType || undefined)
+      .then((catalog) => {
+        setSolutionFeatures(catalog.features);
+        setFeatureCategories(catalog.categories);
+        setRecommendedFeatures(catalog.recommended);
+      })
+      .catch(console.error);
+  }, [problemType]);
+
+  useEffect(() => {
+    if (setupPricingMode !== 'FEATURE_WISE' || !pricingRates) return;
+    const factors = problemTypes.find((p) => p.type === problemType);
+    if (!factors) return;
+    form.setValue(
+      'engineeringEffort',
+      syncFeatureWiseEffort(factors, solutionCoverage ?? [], pricingRates),
+      { shouldValidate: true },
+    );
+  }, [setupPricingMode, solutionCoverage, problemType, complexity, problemTypes, pricingRates, form]);
 
   const isCompleteStep = step === STEPS.length - 1;
   const isReviewStep = step === STEPS.length - 2;
@@ -63,10 +98,12 @@ export function QuoteWizard() {
   const validateStep = async (): Promise<boolean> => {
     const fieldsByStep: (keyof QuoteFormValues)[][] = [
       ['clientName', 'problemStatement', 'problemType'],
-      ['volume', 'volumeUnit', 'complexity', 'engineeringEffort', 'currency', 'startDate'],
+      setupPricingMode === 'ENGINEERING_EFFORT'
+        ? ['volume', 'volumeUnit', 'complexity', 'setupPricingMode', 'engineeringEffort', 'currency', 'startDate']
+        : ['volume', 'volumeUnit', 'complexity', 'setupPricingMode', 'currency', 'startDate'],
       ['solutionCoverage', 'complianceRequirements', 'requiredLanguagesFrameworks', 'integrationComplexity'],
       ['warrantyPeriod', 'warrantyUnit', 'coverageType', 'supportHours', 'supportSLA', 'supportCostModel'],
-      ['cloudProvider', 'estimatedMonthlyCloudCost', 'cloudCostModel', 'expectedLifetime', 'paymentModel'],
+      ['cloudProvider', 'estimatedMonthlyCloudCost', 'cloudCostModel', 'expectedLifetime', 'paymentModel', 'includesHardware', 'hardwareBom'],
       [],
       [],
     ];
@@ -203,8 +240,17 @@ export function QuoteWizard() {
   const renderStep = () => {
     switch (step) {
       case 0: return <StepProblem form={form} problemTypes={problemTypes} />;
-      case 1: return <StepVolume form={form} />;
-      case 2: return <StepCoverage form={form} />;
+      case 1: return <StepVolume form={form} problemTypes={problemTypes} pricingRates={pricingRates} />;
+      case 2: return (
+        <StepCoverage
+          form={form}
+          problemTypes={problemTypes}
+          pricingRates={pricingRates}
+          solutionFeatures={solutionFeatures}
+          featureCategories={featureCategories}
+          recommendedFeatures={recommendedFeatures}
+        />
+      );
       case 3: return <StepWarranty form={form} />;
       case 4: return <StepCloud form={form} />;
       case 5: return <StepReview form={form} pricing={pricing} problemTypeLabel={problemTypeLabel} />;

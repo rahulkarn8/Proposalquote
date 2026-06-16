@@ -33,6 +33,18 @@ open http://localhost:8080
 
 See **[DEPLOYMENT.md](./DEPLOYMENT.md)** for full AWS deployment (ECS Fargate, EC2, ECR, Cognito, HTTPS).
 
+## User Guide (PDF)
+
+A detailed end-user manual is available at:
+
+**[docs/Motherson-AI-Quote-Generator-User-Guide.pdf](./docs/Motherson-AI-Quote-Generator-User-Guide.pdf)**
+
+Regenerate after feature changes:
+
+```bash
+npm run generate:user-guide
+```
+
 ## API Endpoints
 
 | Method | Endpoint | Description |
